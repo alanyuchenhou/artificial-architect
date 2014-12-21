@@ -1,0 +1,40 @@
+\begin{thebibliography}{1}
+
+\bibitem{amoretti2014modeling}
+Michele Amoretti.
+\newblock Modeling and simulation of network-on-chip systems with devs and
+  deus.
+\newblock {\em The Scientific World Journal}, 2014, 2014.
+
+\bibitem{bienia2011benchmarking}
+Christian Bienia and Kai Li.
+\newblock {\em Benchmarking modern multiprocessors}.
+\newblock Princeton University USA, 2011.
+
+\bibitem{ganguly2011scalable}
+Amlan Ganguly, Kevin Chang, Sujay Deb, Partha~Pratim Pande, Benjamin Belzer,
+  and Christof Teuscher.
+\newblock Scalable hybrid wireless network-on-chip architectures for multicore
+  systems.
+\newblock {\em Computers, IEEE Transactions on}, 60(10):1485--1502, 2011.
+
+\bibitem{jiang2013detailed}
+Nan Jiang, Daniel~U Becker, George Michelogiannakis, James Balfour, Brian
+  Towles, David~E Shaw, John Kim, and William~J Dally.
+\newblock A detailed and flexible cycle-accurate network-on-chip simulator.
+\newblock In {\em Performance Analysis of Systems and Software (ISPASS), 2013
+  IEEE International Symposium on}, pages 86--96. IEEE, 2013.
+
+\bibitem{joachims2006training}
+Thorsten Joachims.
+\newblock Training linear svms in linear time.
+\newblock In {\em Proceedings of the 12th ACM SIGKDD international conference
+  on Knowledge discovery and data mining}, pages 217--226. ACM, 2006.
+
+\bibitem{russell1995modern}
+Stuart Russell, Peter Norvig, and Artificial Intelligence.
+\newblock A modern approach.
+\newblock {\em Artificial Intelligence. Prentice-Hall, Egnlewood Cliffs}, 25,
+  1995.
+
+\end{thebibliography}
