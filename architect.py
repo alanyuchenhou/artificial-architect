@@ -1,13 +1,17 @@
 #!/usr/bin/env python
 
 NODE_COUNT = 64
-CONFIGURATION = 'sw_connection.txt'
 PREDICTING_LOG = 'predicting.log'
 SIMULATION_LOG = 'simulation.log'
 INSTANCE = 'instance.dat'
 DATABASE = 'database.dat'
 TRACE = 'trace.dat'
-SIMULATOR = 'simulator.out'
+SIMULATOR = 'booksim2/src/booksim'
+TOPOLOGY = 'booksim2/src/examples/anynet/anynet_file'
+CONFIGURATION = 'booksim2/src/examples/anynet/anynet_config'
+
+# SIMULATOR = 'simulator.out'
+# TOPOLOGY = 'sw_connection.txt'
 
 # modify stdout to flush stream after every call
 # class Unbuffered(object):
@@ -40,6 +44,7 @@ from networkx import nodes
 from networkx import is_connected
 from networkx import average_shortest_path_length
 from networkx import diameter
+from networkx import number_of_edges
 from networkx import radius
 from networkx import density
 from networkx import draw
@@ -80,53 +85,66 @@ class Performer(object):
 class Critic(object):
     def judge(self, graph):
         features = []
+        features.append(number_of_edges(graph))
         features.append(average_shortest_path_length(graph))
         features.append(diameter(graph))
         features.append(radius(graph))
         return features
 
 class Sensor(object):
-    def extract(self, state, SIMULATION_LOG):
+    def extract(self, state):
         with open(SIMULATION_LOG, 'r+') as simulation_log:
             for line in simulation_log:
-                token = 'total  energy: '
+                # if not line.startswith('====== Traffic class 0 ======'):
+                #     print line
+                #     continue
+                token = 'Packet latency average = '
                 if line.startswith(token):
-                    energy = float(line.replace(token, ''))
-                    return energy
+                    latency = float(line.replace(token, ''))
+                    return latency
             print >> simulation_log, state
-            exit("sensor.extract: energy consumption not found in simulation.log; graph dumped;")
+            exit("sensor.extract: latency not found in simulation.log; graph dumped;")
 
 class Actuator(object):
-    parameters = [1,8,1,64,11,64,64,5,0,0,4,7,1.8,'s',6,1,1,'r']
-    def simulate(self, args, SIMULATION_LOG):
-        # print '################################################################'
-        print 'actuator.simulate: simulation started'
-        process1 = Popen([args], stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        for parameter in self.parameters:
-            # print 'continue?'
-            # sys.stdin.readline()
-            while True:
-                reply = process1.stdout.readline()
-                # print 'receiving:', reply,
-                if reply.partition(' ')[0] == 'Enter':
-                    break
-            # print 'actuator.simulate: sending parameter to simulator:', parameter
-            print >> process1.stdin, parameter
-            # sleep(.5)
-        out1, error1 = process1.communicate()
-        with open(SIMULATION_LOG,'w+') as result:
-            print >> result, out1
-        print 'actuator.simulate: simulation finished'
-    def configure(self, graph, CONFIGURATION):
-        adjacency = to_numpy_matrix(graph,dtype=int)
-        adjacency *= 2
-        adjacency += -1
-        all_disconnected = zeros ((NODE_COUNT, NODE_COUNT),dtype = int)
-        all_disconnected -= 1
-        side = all_disconnected.copy()
-        fill_diagonal(side,2)
-        configuration = hstack((vstack((all_disconnected, side)), vstack((side, adjacency))))
-        savetxt(CONFIGURATION, configuration, fmt='%d')
+    # def simulate(self, args, SIMULATION_LOG):
+    # parameters = [1,8,1,64,11,64,64,5,0,0,4,7,1.8,'s',6,1,1,'r']
+    #     # print '################################################################'
+    #     print 'actuator.simulate: simulation started'
+    #     process1 = Popen([args], stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    #     for parameter in self.parameters:
+    #         # print 'continue?'
+    #         # sys.stdin.readline()
+    #         while True:
+    #             reply = process1.stdout.readline()
+    #             # print 'receiving:', reply,
+    #             if reply.partition(' ')[0] == 'Enter':
+    #                 break
+    #         # print 'actuator.simulate: sending parameter to simulator:', parameter
+    #         print >> process1.stdin, parameter
+    #         # sleep(.5)
+    #     out1, error1 = process1.communicate()
+    #     with open(SIMULATION_LOG,'w+') as result:
+    #         print >> result, out1
+    #     print 'actuator.simulate: simulation finished'
+    # def configure(self, graph, TOPOLOGY):
+    #     adjacency = to_numpy_matrix(graph,dtype=int)
+    #     adjacency *= 2
+    #     adjacency += -1
+    #     all_disconnected = zeros ((NODE_COUNT, NODE_COUNT),dtype = int)
+    #     all_disconnected -= 1
+    #     side = all_disconnected.copy()
+    #     fill_diagonal(side,2)
+    #     configuration = hstack((vstack((all_disconnected, side)), vstack((side, adjacency))))
+    #     savetxt(TOPOLOGY, configuration, fmt='%d')
+    def simulate(self):
+        with open(SIMULATION_LOG, 'w') as log:
+            call([SIMULATOR, CONFIGURATION], stdout = log, stderr = log)
+    def configure(self, graph, TOPOLOGY):
+        connection = to_dict_of_lists(graph)
+        with open(TOPOLOGY, 'w+') as configuration:
+            for source in connection:
+                print >> configuration, 'router', source, 'node', source,\
+                'router', ' router '.join(map(str, connection[source]))
     def combine(self, score, features):
         data_instance = []
         data_instance.append(str(score))
@@ -147,9 +165,9 @@ class Actuator(object):
 class Optimization(SearchProblem):
     def actions(self, state):
         features = critic.judge(state)
-        actuator.configure(state, CONFIGURATION)
-        actuator.simulate(SIMULATOR, SIMULATION_LOG)
-        quality = sensor.extract(state, SIMULATION_LOG)
+        actuator.configure(state, TOPOLOGY)
+        actuator.simulate()
+        quality = sensor.extract(state)
         data_instance = actuator.combine(quality, features)
         actuator.write(data_instance, DATABASE, 'a')
         with open(TRACE, 'a') as trace:
@@ -174,9 +192,9 @@ class Optimization(SearchProblem):
         return score
     def generate_random_state(self):
         with open(TRACE, 'a') as trace:
-            print >> trace, 'score \t energy (J) \t path_length \t diameter \t radius'
+            print >> trace, 'score \t latency \t edge_count \t path_length \t diameter \t radius'
             graph = performer.generate_random_graph(2*NODE_COUNT)
-        learner.build_model(DATABASE)
+        # learner.build_model(DATABASE)
         return graph
 
 critic = Critic()
@@ -185,8 +203,19 @@ performer = Performer()
 actuator = Actuator()
 sensor = Sensor()
 optimization = Optimization()
+def initial_learn():
+    for round in range(1000):
+        degree = uniform(2, 8)
+        graph = performer.generate_random_graph(NODE_COUNT*degree)
+        features = critic.judge(graph)
+        actuator.configure(graph, TOPOLOGY)
+        actuator.simulate()
+        quality = sensor.extract(graph)
+        data_instance = actuator.combine(quality, features)
+        actuator.write(data_instance, DATABASE, 'a')
 
 #     for iterations_limit in [2**k for k in range(4)]:
-time_stamp = strftime('%Y.%m.%d.%H.%M.%S')
-call(['mv', TRACE, TRACE[:5] + '.' + time_stamp + TRACE[5:]])
-final = hill_climbing_random_restarts(optimization, 100, 1000)
+time_stamp = strftime('%Y-%m-%d-%H-%M-%S')
+check_call(['mv', TRACE, TRACE[:5] + '-' + time_stamp + TRACE[5:]])
+# initial_learn()
+final = hill_climbing_random_restarts(optimization, 10, 1000)
