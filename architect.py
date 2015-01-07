@@ -5,6 +5,7 @@ PREDICTING_LOG = 'predicting.log'
 SIMULATION_LOG = 'simulation.log'
 INSTANCE = 'instance.dat'
 DATABASE = 'database.dat'
+DATASET = 'dataset.dat'
 TRACE = 'trace.dat'
 SIMULATOR = 'booksim2/src/booksim'
 TOPOLOGY = 'booksim2/src/examples/anynet/anynet_file'
@@ -29,8 +30,6 @@ from sys import exit
 from os import devnull
 from cProfile import run
 from itertools import combinations
-from simpleai.search import SearchProblem
-from simpleai.search.local import hill_climbing_random_restarts
 from random import uniform
 from shlex import split
 from time import sleep
@@ -39,6 +38,8 @@ from subprocess import check_call
 from subprocess import call
 from subprocess import Popen
 from subprocess import PIPE
+from simpleai.search import SearchProblem
+from simpleai.search.local import hill_climbing_random_restarts
 from networkx import Graph
 from networkx import nodes
 from networkx import is_connected
@@ -53,15 +54,19 @@ from networkx import gnm_random_graph
 from networkx import to_numpy_matrix
 from networkx import to_dict_of_lists
 from networkx import to_dict_of_dicts
-from numpy import matrix
-from numpy import zeros
+from numpy import loadtxt
 from numpy import savetxt
 from numpy import fill_diagonal
 from numpy import vstack
 from numpy import hstack
+from numpy import matrix
+from numpy import zeros
+from numpy import logspace
+from numpy import linspace
 # from networkx import to_scipy_sparse_matrix
 # draw(graph1)
-# from scipy import *
+import scipy
+import numpy
 class Learner(object):
     def build_model(self, DATABASE):
         with open(devnull, 'w') as DEVNULL:
@@ -197,12 +202,12 @@ class Optimization(SearchProblem):
         # learner.build_model(DATABASE)
         return graph
 
-critic = Critic()
-learner = Learner()
-performer = Performer()
-actuator = Actuator()
-sensor = Sensor()
-optimization = Optimization()
+# critic = Critic()
+# learner = Learner()
+# performer = Performer()
+# actuator = Actuator()
+# sensor = Sensor()
+# optimization = Optimization()
 def initial_learn():
     for round in range(1000):
         degree = uniform(2, 8)
@@ -215,7 +220,33 @@ def initial_learn():
         actuator.write(data_instance, DATABASE, 'a')
 
 #     for iterations_limit in [2**k for k in range(4)]:
-time_stamp = strftime('%Y-%m-%d-%H-%M-%S')
-check_call(['mv', TRACE, TRACE[:5] + '-' + time_stamp + TRACE[5:]])
+# time_stamp = strftime('%Y-%m-%d-%H-%M-%S')
+# check_call(['mv', TRACE, TRACE[:5] + '-' + time_stamp + TRACE[5:]])
 # initial_learn()
-final = hill_climbing_random_restarts(optimization, 10, 1000)
+# final = hill_climbing_random_restarts(optimization, 10, 1000)
+
+from sklearn import datasets
+from sklearn.svm import SVR
+from sklearn.svm import SVC
+from sklearn.grid_search import GridSearchCV
+from sklearn.preprocessing import scale
+from sklearn.preprocessing import StandardScaler
+unscaled_dataset = loadtxt(DATASET)
+scaler = StandardScaler().fit(unscaled_dataset)
+dataset = scaler.transform(unscaled_dataset)
+reversed_dataset = scaler.inverse_transform(dataset)
+svr = SVR(kernel = 'poly')
+degrees = linspace(0, 10, 11).tolist()
+Cs = logspace(-10, 10, 21).tolist()
+gammas = logspace(-10, 10, 21).tolist()
+parameters = {'kernel':('linear', 'poly', 'rbf'), 'C':Cs}
+print parameters
+svr = SVR()
+regressor = GridSearchCV(svr, parameters, n_jobs = -1)
+dataset = datasets.load_diabetes() # not needed, only 2 arrays are needed:
+print dataset.data              # data: 2d array
+print dataset.target            # target: 1d array
+# regressor.fit(dataset.data[:-10], dataset.target[:-10])
+# print regressor.best_score_
+# print regressor.predict(dataset.data[-10:])
+# print dataset.target[-10:]
