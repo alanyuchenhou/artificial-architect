@@ -56,13 +56,17 @@ from networkx import to_dict_of_lists
 from networkx import to_dict_of_dicts
 from numpy import loadtxt
 from numpy import savetxt
+from numpy import arange
+from numpy import matrix
+from numpy import zeros
 from numpy import fill_diagonal
 from numpy import vstack
 from numpy import hstack
-from numpy import matrix
-from numpy import zeros
+from numpy import hsplit
+from numpy import vsplit
 from numpy import logspace
 from numpy import linspace
+from numpy import squeeze
 # from networkx import to_scipy_sparse_matrix
 # draw(graph1)
 import scipy
@@ -235,18 +239,22 @@ unscaled_dataset = loadtxt(DATASET)
 scaler = StandardScaler().fit(unscaled_dataset)
 dataset = scaler.transform(unscaled_dataset)
 reversed_dataset = scaler.inverse_transform(dataset)
-svr = SVR(kernel = 'poly')
-degrees = linspace(0, 10, 11).tolist()
-Cs = logspace(-10, 10, 21).tolist()
-gammas = logspace(-10, 10, 21).tolist()
-parameters = {'kernel':('linear', 'poly', 'rbf'), 'C':Cs}
-print parameters
-svr = SVR()
-regressor = GridSearchCV(svr, parameters, n_jobs = -1)
-dataset = datasets.load_diabetes() # not needed, only 2 arrays are needed:
-print dataset.data              # data: 2d array
-print dataset.target            # target: 1d array
-# regressor.fit(dataset.data[:-10], dataset.target[:-10])
-# print regressor.best_score_
-# print regressor.predict(dataset.data[-10:])
-# print dataset.target[-10:]
+subdataset = hsplit(dataset,[1])
+kernels = ['linear', 'rbf', 'sigmoid']
+kernels = ['linear', 'poly', 'rbf']
+for kernel in kernels:
+    svr = SVR(kernel)
+    # parameters = {'kernel':[kernel], 'C':logspace(-4, 4, 9).tolist()}
+    parameters = {'C':logspace(-2, 2, 5).tolist()}
+    if kernel == 'poly':
+        parameters['degree'] = linspace(1, 4, 4, dtype = 'int').tolist()
+    if kernel == 'rbf':
+        parameters['gamma'] = logspace(-4, 4, 9).tolist()
+    print parameters
+    regressor = GridSearchCV(svr, parameters, cv = 10, n_jobs = -1)
+    regressor.fit(subdataset[1][:-10], squeeze(subdataset[0])[:-10])
+    print 'kernel=', kernel,
+    print 'best_params=', regressor.best_params_,
+    print 'best_score=', regressor.best_score_
+    # print regressor.predict(subdataset[1][-10:])
+    # print squeeze(subdataset[0][-10:])
