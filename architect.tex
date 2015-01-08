@@ -29,6 +29,94 @@
   This project introduces machine learning enhanced on-chip network architecture design automation. It demonstrates a basic framework for the task. The framework is clarified with a concrete example of network topology optimization. A few experiments are conducted and summarize. The current experimental results have not yet provided evidences to prove this framework is indeed successful. The deficiency of this project and future work to address these issues are also discussed.
 \end{abstract}
 
+\section{Finished steps}
+\subsection{Basic hill climbing}
+In this basic test is a single hill climbing search. It started from a randomly generated design and reached a local optimum. The neighborhood radius in this test is 2. The design features and scores were logged in every search step, which is shown in Figure \ref{fig:trace}. This result suggests the searching is operational - under the guidance of the objective function, the search finds designs with better and better design scores.
+\begin{figure}[htb]
+    \centering
+    \begin{subfigure}
+      {\includegraphics[width=\textwidth]{trace-2014-12-18-14-48-05.png}}
+    \end{subfigure}
+    \rule{\linewidth}{1pt}
+    \caption{The basic search process. The score is calculated with the model learned from a previously obtained data set.}
+    \label{fig:trace}
+\end{figure}
+However, There are 2 obvious weaknesses in this experiment:
+\begin{enumerate}
+  \item The design score predicted by the objective function is not a reliable justification of the design quality. Only the energy consumption predicted by the simulator is. If the objective function prediction deviates from the simulator prediction too much, the search can never find a optimum design.
+  \item The degree has abnormal trend after 60 steps. Instead of increasing, it started to decrease, and even all the way to a very low level of 2. This phenomenon is against our experience for network design, and is a good sign that the model previously learned does not perform well.
+\end{enumerate}
+\subsection{Hill climbing with random restart, learning and feedback}
+The test after the first refinement confirmed the problem exposed in the previous test: the model does not perform well, as indicated by the feedback from the simulator. The neighborhood radius is still 2 in this test. Figure \ref{fig:refined} shows the search history in the 2nd experiment, after random restart, learning and feedback are applied to the search. This test is still in progress, but the current result is already quite dramatic.
+\begin{figure}[htb]
+    \centering
+    \begin{subfigure}
+      {\includegraphics[width=\textwidth]{trace-1.png}}
+    \end{subfigure}
+    \rule{\linewidth}{1pt}
+    \caption{The 2nd search process. The new energy consumption is obtained from the simulator's feedback.}
+    \label{fig:refined}
+\end{figure}
+All the data trace are discontinuous because of random restart. Every time the search reaches a local optimum, the search restarts and all the features, score and energy jump to new levels. It is not clear whether learning during the search process has effectively improved the search performance; the subsequent search process may provide more insight to this question. The fluctuation of the energy does decrease gradually, but this is not a strong evidence that the this results from more accurate prediction and hence the learning process.  Within every search cycle, the features and scores still behave as in the previous test. However, the trend of the energy is far from what I expected. In the ideal situation, the energy should certainly decrease monotonically, as that is the goal of the search. Practically speaking, the prediction given by the model(the score) will have some deviation from the real value(energy), so the energy is supposed to decrease with fluctuation. One can argue that the energy does 'decrease with fluctuation' in every search cycle according to the data provided in this test, but this argument is weak because the magnitude of the energy fluctuation is even larger than the overall energy decrements. If the assumption that the simulation is accurate holds, the explanation should be the network energy is very sensitive to minor changes in the network topology. Further more, I can infer that minor changes in the topology can radically change some features not captured in the current learning process. It is also possible that those design features are not closely related to network topology. This analysis need more knowledge about network design.
+\subsection{Optimization for latency}
+\begin{figure}[htb]
+    \centering
+    \begin{subfigure}
+      {\includegraphics[width=\textwidth]{trace.png}}
+    \end{subfigure}
+    \rule{\linewidth}{1pt}
+    \caption{The optimization process with latency as the metric during a single hill climbing}
+    \label{fig:latency}
+\end{figure}
+As the previous model cannot accurately predict energy consumption, we decided to start the process of rebuilding the model with better features and better learners. But before I did that, I realized as we would rebuild a model anyway, I could also build a model for a different metric, instead for new features. Therefore, I let it build a model for the metric of latency. And it turned out that this model performed very well in an optimization process. A short optimization process is shown in Figure \ref{fig:latency}. The progress of the optimization is very good in the first 60 steps, although it enters a plateau-like region afterward. This trial has not solved the old problem of energy optimization, but at least suggests the whole framework we have now is operational.
+\subsection{Data standardization}
+To improve estimation accuracy, I applied standardization to the data. The standardization removes the mean of each feature and scale the feature by dividing by its standard deviation. After standardization, every feature has zero mean and unit variance.
+\subsection{Regression SVM: model optimization}
+With a prospect of more rapid training and more accurate prediction, I upgraded the SVM from a ranking SVM to a regression SVM \cite{chang2011libsvm}. The objective in this step is to find a good SVM model: a good kernel function with corresponding hyperparameters. The score(metric) of a SVM model is the coefficient of determination of the prediction values and target values. In other words, the higher the score is, the more accurate the SVM estimation is. The basic approach is to performe grid search on hyperparameters for common kernels. 10-fold cross validation is used to split the datasets into training sets and test sets. The search spaces for the hyperparameters are geometric series with base 10, covering wide ranges of parapemeter spaces surrounding the optimum values (the polynomial degree is an exception, which is a drawn from a linear series). Table \ref{tab:models} shows the kernels considered, the best parameters for each of them and corresponding best scores (1 is the maximum possible score). The target value in the dataset is latency.
+\begin{table}[htb]
+  \centering
+  \begin{tabularx}{\textwidth}{|l|l|l|X|} \hline
+    kernel & best parameters & best score & comment \\ \hline
+    linear & {'C': 1.0} & 0.997911262124 & linear kernel shows unexpected good performance \\ \hline
+    poly & {'C': 10.0, 'degree': 1} & 0.997904758134 & polynomial kernel performs well; the optimum degree is 1, it differs from linear kernel only by a constant variable in the estimation value \\ \hline
+    rbf & {'C': 10.0, 'gamma': 0.1} & 0.998510004994 & rbf kernel has the best performance \\ \hline
+    sigmoid & {'C': 0.0001} & -0.117680908896 & sigmoid has bad performance \\ \hline
+  \end{tabularx}
+  \caption{Regression SVM model optimization results for 4 kernels}
+  \label{tab:models}
+\end{table}
+
+\section{Next steps}
+\subsection{Energy estimation reevaluation}
+Test the performance of the new estimators for energy estimation.
+\subsection{Optimization for energy latency product}
+2 SVM regressor are generated to estimate 2 metrics: energy and latency. One of them fits to the data for the target energy, ignoring latency; the other fits to the data for the target latency, ignoring energy.
+\subsection{More expressive design features}
+This is an important way to improve the design quality in the long run. I will record the states of the searches and their features, qualities predicted by the objective function and also assessed by the simulator. Then I need to identify the search process where model predictions deviate from simulation assessment, and also characterize the common bad features of these designs which the learning has not taken into account yet, using domain knowledge specific for network on chip design. The I can add these new features that reflect the drawbacks of these networks into the learning problem. In this way, the objective function will relate these features to design qualities through learning and prevent future searches from getting into these bad states.
+\subsection{New learners: Boosted Regression Trees and LambdaMART}
+http://statsr.wikispaces.com/Boosted+Regression+Trees\\
+http://sourceforge.net/p/lemur/wiki/RankLib
+\subsection{Bayesian optimization and Guassian processes}
+Gaussian process and continuous to discrete optimization \cite{brochu2010tutorial}.
+\subsection{Study a Bayesian optimization for hardware design}
+Computer architecture design optimization with Bayesian optimization \cite{demasiusing}.
+\subsection{New learning algorithm}
+An learning algorithm that fits online learning is needed, because learning process is getting longer as training data-set increases. By 2014-12-19, the training dataset has exceeded 1.5K training instances; every new learning takes more than 1 day. Current learning frequency is once every search cycle, but it is still too expensive. Also I will find a ML library to replace the current standalone learning program to avoid system calls and file read / write operations, to speedup the learning and searching.
+\subsection{Learning algorithm tuning}
+More suitable kernels and parameters may help the SVM used in this project to fit the learning task better. However, systematic and effective tuning is itself a search problem - I am essentially searching for a optimum SVM setup. I will need more knowledge to carry out this search.
+\subsection{Model oriented learning}
+One of the assumption of this project is that the quality of an arbitrary design can be accurately predicted by a model built by a learning algorithm. It is not clear if this assumption depends on any conditions. It is possible that the tool has to learn a much more complex model, because its purpose is to serve as an analytical replacement of the simulator(which is very complex) in situations where accuracy requirement is low. This model will be less accurate than the the simulator, but also has to be much less expensive to use. This work depends on a good knowledge on both the simulator design and learning technique.
+\subsection{Large neighborhood and first-choice hill climbing}
+Big neighborhood provide more opportunities for uphill moves, but they are usually way too slow because there are too many neighbors to examine. For example, even if the radius of the neighborhood increases to only 3, the climbing speed can drop to 2 uphill moves per hour. In future work, I will examine the possibility of combining large neighborhood with first-choice hill climbing, as first-choice hill climbing can avoid exhaustive examination of the entire neighborhood and its performance penalty. However, this approach with a very large neighborhood has a drawback. The hill climbing might have very big actions so that it becomes more like a series of jumps in the search space, instead of climbing a hill step by step, as in a typical local search.
+\subsection{Small neighborhood and simulated annealing}
+Simulated annealing can also address the issue of getting stuck at local optima, which I should also try in the future. As the workload of simulated annealing is even higher than a normal hill climbing search,only small neighborhood should be consider in this scenario. The drawback of this approach is not clear yet.
+\subsection{Adaptive searching}
+Instead of fix the hill climbing methods, the agent might adapt its searching algorithm to the specific situation it is in. For example, at the beginning of the search, it can use first-choice hill climbing with large neighborhood to rapidly approach a good neighborhood; then it can switch to simulated annealing with small neighborhood to conduct more thorough search around that neighborhood.
+\subsection{Neighbor filtering}
+I will consider to find high performance filter to discard the neighbors with bad qualities before they are examined by the objective function to reduce the workload of the examination. This filter must be less expensive than the objective function.
+\subsection{Program profiling}
+Currently, program run time is not a the primary focus, but the prolonged search process does have an negative effect to the project. Profiling is worth considering in the future.
+
 \section{Introduction}
 \subsection{Motivation and challenges}
 The problem this project focuses on is on-chip network design automation. On-chip network has become increasingly prevalent as the communication system in modern chip designs. A key in a good on-chip network is usually a good trade-off between many conflicting design features. An architect might be able to tell how good every feature of the design is, but even the most experienced architects can have only a vague idea about the best trade-off point. Along with the exponential growth of design complexity, design quality analysis and design feature trade-off become more difficult. Therefore, performing a large number simulations has become the primary method for many design optimization tasks. Although we have sophisticated simulators \cite{amoretti2014modeling} \cite{jiang2013detailed} to accurately assess design qualities, design processes still heavily depend on intellectual engagement of human. Also, simulation based design processes are time consuming because simulations are getting more expensive. Computer aided design tools we have now mostly deal with only low level design optimization, but not high level design optimization. This leads to a well known issue in chip design - productivity gap: design complexity keeps increasing rapidly, but designer productivity is lagged behind.
@@ -261,55 +349,6 @@ Random restart is a common technique to reduce the issue of stuck-at local optim
 
 %% \lstinputlisting[firstline=43]{swNoCsim/swNoCsim/architect.py}
 
-\section{Experiments and results}
-\subsection{Basic hill climbing}
-In this basic test is a single hill climbing search. It started from a randomly generated design and reached a local optimum. The neighborhood radius in this test is 2. The design features and scores were logged in every search step, which is shown in Figure \ref{fig:trace}. This result suggests the searching is operational - under the guidance of the objective function, the search finds designs with better and better design scores.
-\begin{figure}[htb]
-    \centering
-    \begin{subfigure}
-      {\includegraphics[width=\textwidth]{trace-2014-12-18-14-48-05.png}}
-    \end{subfigure}
-    \rule{\linewidth}{1pt}
-    \caption{The basic search process. The score is calculated with the model learned from a previously obtained data set.}
-    \label{fig:trace}
-\end{figure}
-However, There are 2 obvious weaknesses in this experiment:
-\begin{enumerate}
-  \item The design score predicted by the objective function is not a reliable justification of the design quality. Only the energy consumption predicted by the simulator is. If the objective function prediction deviates from the simulator prediction too much, the search can never find a optimum design.
-  \item The degree has abnormal trend after 60 steps. Instead of increasing, it started to decrease, and even all the way to a very low level of 2. This phenomenon is against our experience for network design, and is a good sign that the model previously learned does not perform well.
-\end{enumerate}
-\subsection{Hill climbing with random restart, learning and feedback}
-The test after the first refinement confirmed the problem exposed in the previous test: the model does not perform well, as indicated by the feedback from the simulator. The neighborhood radius is still 2 in this test. Figure \ref{fig:refined} shows the search history in the 2nd experiment, after random restart, learning and feedback are applied to the search. This test is still in progress, but the current result is already quite dramatic.
-\begin{figure}[htb]
-    \centering
-    \begin{subfigure}
-      {\includegraphics[width=\textwidth]{trace.png}}
-    \end{subfigure}
-    \rule{\linewidth}{1pt}
-    \caption{The 2nd search process. The new energy consumption is obtained from the simulator's feedback.}
-    \label{fig:refined}
-\end{figure}
-All the data trace are discontinuous because of random restart. Every time the search reaches a local optimum, the search restarts and all the features, score and energy jump to new levels. It is not clear whether learning during the search process has effectively improved the search performance; the subsequent search process may provide more insight to this question. The fluctuation of the energy does decrease gradually, but this is not a strong evidence that the this results from more accurate prediction and hence the learning process.  Within every search cycle, the features and scores still behave as in the previous test. However, the trend of the energy is far from what I expected. In the ideal situation, the energy should certainly decrease monotonically, as that is the goal of the search. Practically speaking, the prediction given by the model(the score) will have some deviation from the real value(energy), so the energy is supposed to decrease with fluctuation. One can argue that the energy does 'decrease with fluctuation' in every search cycle according to the data provided in this test, but this argument is weak because the magnitude of the energy fluctuation is even larger than the overall energy decrements. If the assumption that the simulation is accurate holds, the explanation should be the network energy is very sensitive to minor changes in the network topology. Further more, I can infer that minor changes in the topology can radically change some features not captured in the current learning process. It is also possible that those design features are not closely related to network topology. This analysis need more knowledge about network design.
-\section{Conclusion and future work}
-The current architect program is not yet able to solve the problem it is designed to solve due to inaccurate objective function used in the local search. More advanced search technique may improve the search result. However, an accurate objective function and successful learning mechanism are much more likely to fundamentally solve the current problem.
-\subsection{More expressive design features}
-This is an important way to improve the design quality in the long run. I will record the states of the searches and their features, qualities predicted by the objective function and also assessed by the simulator. Then I need to identify the search process where model predictions deviate from simulation assessment, and also characterize the common bad features of these designs which the learning has not taken into account yet, using domain knowledge specific for network on chip design. The I can add these new features that reflect the drawbacks of these networks into the learning problem. In this way, the objective function will relate these features to design qualities through learning and prevent future searches from getting into these bad states.
-\subsection{New learning algorithm}
-An learning algorithm that fits online learning is needed, because learning process is getting longer as training data-set increases. By 2014-12-19, the training dataset has exceeded 1.5K training instances; every new learning takes more than 1 day. Current learning frequency is once every search cycle, but it is still too expensive. Also I will find a ML library to replace the current standalone learning program to avoid system calls and file read / write operations, to speedup the learning and searching.
-\subsection{Learning algorithm tuning}
-More suitable kernels and parameters may help the SVM used in this project to fit the learning task better. However, systematic and effective tuning is itself a search problem - I am essentially searching for a optimum SVM setup. I will need more knowledge to carry out this search.
-\subsection{Model oriented learning}
-One of the assumption of this project is that the quality of an arbitrary design can be accurately predicted by a model built by a learning algorithm. It is not clear if this assumption depends on any conditions. It is possible that the tool has to learn a much more complex model, because its purpose is to serve as an analytical replacement of the simulator(which is very complex) in situations where accuracy requirement is low. This model will be less accurate than the the simulator, but also has to be much less expensive to use. This work depends on a good knowledge on both the simulator design and learning technique.
-\subsection{Large neighborhood and first-choice hill climbing}
-Big neighborhood provide more opportunities for uphill moves, but they are usually way too slow because there are too many neighbors to examine. For example, even if the radius of the neighborhood increases to only 3, the climbing speed can drop to 2 uphill moves per hour. In future work, I will examine the possibility of combining large neighborhood with first-choice hill climbing, as first-choice hill climbing can avoid exhaustive examination of the entire neighborhood and its performance penalty. However, this approach with a very large neighborhood has a drawback. The hill climbing might have very big actions so that it becomes more like a series of jumps in the search space, instead of climbing a hill step by step, as in a typical local search.
-\subsection{Small neighborhood and simulated annealing}
-Simulated annealing can also address the issue of getting stuck at local optima, which I should also try in the future. As the workload of simulated annealing is even higher than a normal hill climbing search,only small neighborhood should be consider in this scenario. The drawback of this approach is not clear yet.
-\subsection{Adaptive searching}
-Instead of fix the hill climbing methods, the agent might adapt its searching algorithm to the specific situation it is in. For example, at the beginning of the search, it can use first-choice hill climbing with large neighborhood to rapidly approach a good neighborhood; then it can switch to simulated annealing with small neighborhood to conduct more thorough search around that neighborhood.
-\subsection{Neighbor filtering}
-I will consider to find high performance filter to discard the neighbors with bad qualities before they are examined by the objective function to reduce the workload of the examination. This filter must be less expensive than the objective function.
-\subsection{Program profiling}
-Currently, program run time is not a the primary focus, but the prolonged search process does have an negative effect to the project. Profiling is worth considering in the future.
 
 \bibliographystyle{plain}
 \bibliography{architect}

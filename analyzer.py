@@ -43,23 +43,26 @@ FIGURE = 'trace.png'
 DOCUMENT = 'architect'
 time_stamp = strftime('%Y-%m-%d-%H-%M-%S')
 
-# call(['mv', FIGURE, FIGURE[:5] + '-' + time_stamp + FIGURE[5:]])
 data = genfromtxt(TRACE, delimiter = '\t', names = True)
 styles = cycle(('--', '-.', '-', ':'))
 font_properties = FontProperties()
 font_properties.set_size('small')
 figure()
-subplot(312)
 for column in data.dtype.names:
     # plot(data[column], label = column, linestyle = styles.next())
-    plot(data[column], label = column)
     if (column == 'score'):
-        legend(loc = 'upper right', prop = font_properties).get_frame().set_alpha(.1)
         subplot(311)
-    if (column == 'radius'):
+        plot(data[column], label = column)
         legend(loc = 'upper right', prop = font_properties).get_frame().set_alpha(.1)
+    if (column == 'latency'):
+        subplot(312)
+        plot(data[column], label = column)
+        legend(loc = 'upper right', prop = font_properties).get_frame().set_alpha(.1)
+    if (column == 'path_length'):
         subplot(313)
+        plot(data[column], label = column)
+        legend(loc = 'upper right', prop = font_properties).get_frame().set_alpha(.1)
 xlabel('step')
-legend(loc = 'upper right', prop = font_properties).get_frame().set_alpha(.1)
+# legend(loc = 'upper right', prop = font_properties).get_frame().set_alpha(.1)
 savefig(FIGURE, dpi = 200)
 check_call(['pdflatex', DOCUMENT])

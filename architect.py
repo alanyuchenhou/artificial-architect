@@ -77,16 +77,6 @@ from sklearn.preprocessing import StandardScaler
 # draw(graph1)
 
 class Learner(object):
-    def initial_learn(self):
-        for round in range(1000):
-            degree = uniform(2, 8)
-            graph = performer.generate_random_graph(NODE_COUNT*degree)
-            features = critic.judge(graph)
-            actuator.configure(graph, TOPOLOGY)
-            actuator.simulate()
-            quality = sensor.extract(graph)
-            data_instance = actuator.combine(quality, features)
-            actuator.write(data_instance, DATABASE, 'a')
     def evaluate_kernels(self, DATASET):
         unscaled_dataset = loadtxt(DATASET)
         scaler = StandardScaler()
@@ -116,6 +106,13 @@ class Learner(object):
             check_call(split('svm_rank_learn -c 10 -l 1 ' + DATABASE + '  model'), stdout = DEVNULL)
 
 class Performer(object):
+    def extract_features(self, graph):
+        features = []
+        features.append(number_of_edges(graph))
+        features.append(average_shortest_path_length(graph))
+        features.append(diameter(graph))
+        features.append(radius(graph))
+        return features
     def generate_random_graph(self, edge_count):
         while True:
             graph = gnm_random_graph(NODE_COUNT, edge_count)
@@ -129,18 +126,18 @@ class Performer(object):
         with open('predictions', 'r') as assess_result:
             for line in assess_result:
                 return - float(line)
-
-class Critic(object):
-    def judge(self, graph):
-        features = []
-        features.append(number_of_edges(graph))
-        features.append(average_shortest_path_length(graph))
-        features.append(diameter(graph))
-        features.append(radius(graph))
-        return features
+    def build_dataset(self):
+        for round in range(1000):
+            graph = self.generate_random_graph(NODE_COUNT*uniform(2, 16))
+            features = self.extract_features(graph)
+            actuator.configure(graph, TOPOLOGY)
+            actuator.simulate()
+            quality = sensor.extract_targets(graph)
+            data_instance = actuator.combine(quality, features)
+            actuator.write(data_instance, DATABASE, 'a')
 
 class Sensor(object):
-    def extract(self, state):
+    def extract_targets(self, state):
         with open(SIMULATION_LOG, 'r+') as simulation_log:
             for line in simulation_log:
                 # if not line.startswith('====== Traffic class 0 ======'):
@@ -186,7 +183,7 @@ class Actuator(object):
     #     savetxt(TOPOLOGY, configuration, fmt='%d')
     def simulate(self):
         with open(SIMULATION_LOG, 'w') as log:
-            call([SIMULATOR, CONFIGURATION], stdout = log, stderr = log)
+            check_call([SIMULATOR, CONFIGURATION], stdout = log)
     def configure(self, graph, TOPOLOGY):
         connection = to_dict_of_lists(graph)
         with open(TOPOLOGY, 'w+') as configuration:
@@ -212,10 +209,10 @@ class Actuator(object):
 
 class Optimization(SearchProblem):
     def actions(self, state):
-        features = critic.judge(state)
+        features = performer.extract_features(state)
         actuator.configure(state, TOPOLOGY)
         actuator.simulate()
-        quality = sensor.extract(state)
+        quality = sensor.extract_targets(state)
         data_instance = actuator.combine(quality, features)
         actuator.write(data_instance, DATABASE, 'a')
         with open(TRACE, 'a') as trace:
@@ -235,7 +232,7 @@ class Optimization(SearchProblem):
     def result(self, state, action):
         return action
     def value(self, state):
-        features = critic.judge(state)
+        features = performer.extract_features(state)
         score = performer.assess(features)
         return score
     def generate_random_state(self):
@@ -245,7 +242,6 @@ class Optimization(SearchProblem):
         # learner.build_model(DATABASE)
         return graph
 
-critic = Critic()
 learner = Learner()
 performer = Performer()
 actuator = Actuator()
@@ -254,8 +250,7 @@ optimization = Optimization()
 
 # time_stamp = strftime('%Y-%m-%d-%H-%M-%S')
 # check_call(['mv', TRACE, TRACE[:5] + '-' + time_stamp + TRACE[5:]])
-# learner.initial_learn()
 # final = hill_climbing_random_restarts(optimization, 10, 1000)
 
-learner.evaluate_kernels(DATASET)
-# create a new function to gather dataset of random designs
+# learner.evaluate_kernels(DATASET)
+actuator.simulate()

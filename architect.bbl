@@ -11,6 +11,22 @@ Christian Bienia and Kai Li.
 \newblock {\em Benchmarking modern multiprocessors}.
 \newblock Princeton University USA, 2011.
 
+\bibitem{brochu2010tutorial}
+Eric Brochu, Vlad~M Cora, and Nando De~Freitas.
+\newblock A tutorial on bayesian optimization of expensive cost functions, with
+  application to active user modeling and hierarchical reinforcement learning.
+\newblock {\em arXiv preprint arXiv:1012.2599}, 2010.
+
+\bibitem{chang2011libsvm}
+Chih-Chung Chang and Chih-Jen Lin.
+\newblock Libsvm: a library for support vector machines.
+\newblock {\em ACM Transactions on Intelligent Systems and Technology (TIST)},
+  2(3):27, 2011.
+
+\bibitem{demasiusing}
+Orianna DeMasi, Joseph Gonzalez, Benjamin Recht, and James Demmel.
+\newblock Using bayesian optimization for hardware design.
+
 \bibitem{ganguly2011scalable}
 Amlan Ganguly, Kevin Chang, Sujay Deb, Partha~Pratim Pande, Benjamin Belzer,
   and Christof Teuscher.
