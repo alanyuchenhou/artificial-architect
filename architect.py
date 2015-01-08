@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 
 NODE_COUNT = 64
-PREDICTING_LOG = 'predicting.log'
 SIMULATION_LOG = 'simulation.log'
-INSTANCE = 'instance.dat'
-DATABASE = 'database.dat'
 DATASET = 'dataset.dat'
 TRACE = 'trace.dat'
 SIMULATOR = 'booksim2/src/booksim'
 TOPOLOGY = 'booksim2/src/examples/anynet/anynet_file'
 CONFIGURATION = 'booksim2/src/examples/anynet/anynet_config'
 
+# PREDICTING_LOG = 'predicting.log'
+# INSTANCE = 'instance.dat'
+# DATABASE = 'database.dat'
 # SIMULATOR = 'simulator.out'
 # TOPOLOGY = 'sw_connection.txt'
 
@@ -137,19 +137,17 @@ class Performer(object):
             actuator.write(data_instance, DATABASE, 'a')
 
 class Sensor(object):
-    def extract_targets(self, state):
-        with open(SIMULATION_LOG, 'r+') as simulation_log:
+    def extract_targets(self):
+        with open(SIMULATION_LOG, 'r') as simulation_log:
+            targets = {'latency':{'token': 'Packet latency average = ', 'value' : -1},
+                       'power':{'token' : '- Total Power:             ', 'value' : -1}}
             for line in simulation_log:
-                # if not line.startswith('====== Traffic class 0 ======'):
-                #     print line
-                #     continue
-                token = 'Packet latency average = '
-                if line.startswith(token):
-                    latency = float(line.replace(token, ''))
-                    return latency
-            print >> simulation_log, state
-            exit("sensor.extract: latency not found in simulation.log; graph dumped;")
-
+                for target in targets:
+                    if line.startswith(targets[target]['token']):
+                        value_string = (line.replace(targets[target]['token'], '').partition(' ')[0])
+                        targets[target]['value'] = float(value_string)
+        return targets
+    
 class Actuator(object):
     # def simulate(self, args, SIMULATION_LOG):
     # parameters = [1,8,1,64,11,64,64,5,0,0,4,7,1.8,'s',6,1,1,'r']
@@ -253,4 +251,5 @@ optimization = Optimization()
 # final = hill_climbing_random_restarts(optimization, 10, 1000)
 
 # learner.evaluate_kernels(DATASET)
-actuator.simulate()
+# actuator.simulate()
+print sensor.extract_targets()
