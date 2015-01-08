@@ -67,11 +67,50 @@ from numpy import vsplit
 from numpy import logspace
 from numpy import linspace
 from numpy import squeeze
-# from networkx import to_scipy_sparse_matrix
+from sklearn import datasets
+from sklearn.svm import SVR
+from sklearn.svm import SVC
+from sklearn.grid_search import GridSearchCV
+from sklearn.preprocessing import scale
+from sklearn.preprocessing import StandardScaler
+
 # draw(graph1)
-import scipy
-import numpy
+
 class Learner(object):
+    def initial_learn(self):
+        for round in range(1000):
+            degree = uniform(2, 8)
+            graph = performer.generate_random_graph(NODE_COUNT*degree)
+            features = critic.judge(graph)
+            actuator.configure(graph, TOPOLOGY)
+            actuator.simulate()
+            quality = sensor.extract(graph)
+            data_instance = actuator.combine(quality, features)
+            actuator.write(data_instance, DATABASE, 'a')
+    def evaluate_kernels(self, DATASET):
+        unscaled_dataset = loadtxt(DATASET)
+        scaler = StandardScaler()
+        scaler.fit(unscaled_dataset)
+        dataset = scaler.transform(unscaled_dataset)
+        reversed_dataset = scaler.inverse_transform(dataset)
+        subdataset = hsplit(dataset,[1])
+        kernels = ['linear', 'poly', 'rbf']
+        for kernel in kernels:
+            svr = SVR(kernel)
+            # parameters = {'kernel':[kernel], 'C':logspace(-4, 4, 9).tolist()}
+            parameters = {'C':logspace(-2, 2, 5).tolist()}
+            if kernel == 'poly':
+                parameters['degree'] = linspace(1, 4, 4, dtype = 'int').tolist()
+            if kernel == 'rbf':
+                parameters['gamma'] = logspace(-4, 4, 9).tolist()
+            # print parameters
+            regressor = GridSearchCV(svr, parameters, cv = 10, n_jobs = -1)
+            regressor.fit(subdataset[1][:-10], squeeze(subdataset[0])[:-10])
+            print 'kernel=', kernel,
+            print 'best_params=', regressor.best_params_,
+            print 'best_score=', regressor.best_score_
+            # print regressor.predict(subdataset[1][-10:])
+            # print squeeze(subdataset[0][-10:])
     def build_model(self, DATABASE):
         with open(devnull, 'w') as DEVNULL:
             check_call(split('svm_rank_learn -c 10 -l 1 ' + DATABASE + '  model'), stdout = DEVNULL)
@@ -206,55 +245,17 @@ class Optimization(SearchProblem):
         # learner.build_model(DATABASE)
         return graph
 
-# critic = Critic()
-# learner = Learner()
-# performer = Performer()
-# actuator = Actuator()
-# sensor = Sensor()
-# optimization = Optimization()
-def initial_learn():
-    for round in range(1000):
-        degree = uniform(2, 8)
-        graph = performer.generate_random_graph(NODE_COUNT*degree)
-        features = critic.judge(graph)
-        actuator.configure(graph, TOPOLOGY)
-        actuator.simulate()
-        quality = sensor.extract(graph)
-        data_instance = actuator.combine(quality, features)
-        actuator.write(data_instance, DATABASE, 'a')
+critic = Critic()
+learner = Learner()
+performer = Performer()
+actuator = Actuator()
+sensor = Sensor()
+optimization = Optimization()
 
-#     for iterations_limit in [2**k for k in range(4)]:
 # time_stamp = strftime('%Y-%m-%d-%H-%M-%S')
 # check_call(['mv', TRACE, TRACE[:5] + '-' + time_stamp + TRACE[5:]])
-# initial_learn()
+# learner.initial_learn()
 # final = hill_climbing_random_restarts(optimization, 10, 1000)
 
-from sklearn import datasets
-from sklearn.svm import SVR
-from sklearn.svm import SVC
-from sklearn.grid_search import GridSearchCV
-from sklearn.preprocessing import scale
-from sklearn.preprocessing import StandardScaler
-unscaled_dataset = loadtxt(DATASET)
-scaler = StandardScaler().fit(unscaled_dataset)
-dataset = scaler.transform(unscaled_dataset)
-reversed_dataset = scaler.inverse_transform(dataset)
-subdataset = hsplit(dataset,[1])
-kernels = ['linear', 'rbf', 'sigmoid']
-kernels = ['linear', 'poly', 'rbf']
-for kernel in kernels:
-    svr = SVR(kernel)
-    # parameters = {'kernel':[kernel], 'C':logspace(-4, 4, 9).tolist()}
-    parameters = {'C':logspace(-2, 2, 5).tolist()}
-    if kernel == 'poly':
-        parameters['degree'] = linspace(1, 4, 4, dtype = 'int').tolist()
-    if kernel == 'rbf':
-        parameters['gamma'] = logspace(-4, 4, 9).tolist()
-    print parameters
-    regressor = GridSearchCV(svr, parameters, cv = 10, n_jobs = -1)
-    regressor.fit(subdataset[1][:-10], squeeze(subdataset[0])[:-10])
-    print 'kernel=', kernel,
-    print 'best_params=', regressor.best_params_,
-    print 'best_score=', regressor.best_score_
-    # print regressor.predict(subdataset[1][-10:])
-    # print squeeze(subdataset[0][-10:])
+learner.evaluate_kernels(DATASET)
+# create a new function to gather dataset of random designs
