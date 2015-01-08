@@ -28,6 +28,7 @@ CONFIGURATION = 'booksim2/src/examples/anynet/anynet_config'
 
 from sys import exit
 from os import devnull
+from copy import copy
 from cProfile import run
 from itertools import combinations
 from random import uniform
@@ -129,24 +130,22 @@ class Performer(object):
     def build_dataset(self):
         for round in range(1000):
             graph = self.generate_random_graph(NODE_COUNT*uniform(2, 16))
-            features = self.extract_features(graph)
             actuator.configure(graph, TOPOLOGY)
             actuator.simulate()
-            quality = sensor.extract_targets(graph)
-            data_instance = actuator.combine(quality, features)
-            actuator.write(data_instance, DATABASE, 'a')
+            sample = sensor.extract_targets() + self.extract_features(graph)
+            actuator.write(sample, DATASET)
 
 class Sensor(object):
     def extract_targets(self):
         with open(SIMULATION_LOG, 'r') as simulation_log:
-            targets = {'latency':{'token': 'Packet latency average = ', 'value' : -1},
-                       'power':{'token' : '- Total Power:             ', 'value' : -1}}
+            targets = ['Packet latency average = ', '- Total Power:             ']
+            values = copy(targets)
             for line in simulation_log:
-                for target in targets:
-                    if line.startswith(targets[target]['token']):
-                        value_string = (line.replace(targets[target]['token'], '').partition(' ')[0])
-                        targets[target]['value'] = float(value_string)
-        return targets
+                for index in range(len(targets)):
+                    if line.startswith(targets[index]):
+                        value_string = (line.replace(targets[index], '').partition(' ')[0])
+                        values[index] = float(value_string)
+        return values
     
 class Actuator(object):
     # def simulate(self, args, SIMULATION_LOG):
@@ -200,9 +199,9 @@ class Actuator(object):
     #         check_call(['sed', '-e', '1,10d', DATABASE], stdout = out)
     #     with open('test.dat', 'w+') as out:
     #         check_call(['sed', '-n', '1,10p', DATABASE], stdout = out)
-    def write(self, data_instance, DATABASE, mode):
-        instance = ' '.join(element for element in data_instance)
-        with open(DATABASE, mode) as database:
+    def write(self, sample, DATABASE):
+        instance = ' '.join(map(str, sample))
+        with open(DATABASE, 'a') as database:
             print >> database, instance
 
 class Optimization(SearchProblem):
@@ -210,9 +209,9 @@ class Optimization(SearchProblem):
         features = performer.extract_features(state)
         actuator.configure(state, TOPOLOGY)
         actuator.simulate()
-        quality = sensor.extract_targets(state)
-        data_instance = actuator.combine(quality, features)
-        actuator.write(data_instance, DATABASE, 'a')
+        quality = performer.evaluate_quality(sensor.extract_targets())
+        # data_instance = actuator.combine(quality, features)
+        # actuator.write(data_instance, DATABASE, 'a')
         with open(TRACE, 'a') as trace:
             score = performer.assess(features)
             print >> trace, '\t'.join(map(str, [score] + [quality] + features))
@@ -251,5 +250,4 @@ optimization = Optimization()
 # final = hill_climbing_random_restarts(optimization, 10, 1000)
 
 # learner.evaluate_kernels(DATASET)
-# actuator.simulate()
-print sensor.extract_targets()
+performer.build_dataset()
