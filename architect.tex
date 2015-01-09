@@ -71,26 +71,38 @@ All the data trace are discontinuous because of random restart. Every time the s
 As the previous model cannot accurately predict energy consumption, we decided to start the process of rebuilding the model with better features and better learners. But before I did that, I realized as we would rebuild a model anyway, I could also build a model for a different metric, instead for new features. Therefore, I let it build a model for the metric of latency. And it turned out that this model performed very well in an optimization process. A short optimization process is shown in Figure \ref{fig:latency}. The progress of the optimization is very good in the first 60 steps, although it enters a plateau-like region afterward. This trial has not solved the old problem of energy optimization, but at least suggests the whole framework we have now is operational.
 \subsection{Data standardization}
 To improve estimation accuracy, I applied standardization to the data. The standardization removes the mean of each feature and scale the feature by dividing by its standard deviation. After standardization, every feature has zero mean and unit variance.
-\subsection{Regression SVM: model optimization}
-With a prospect of more rapid training and more accurate prediction, I upgraded the SVM from a ranking SVM to a regression SVM \cite{chang2011libsvm}. The objective in this step is to find a good SVM model: a good kernel function with corresponding hyperparameters. The score(metric) of a SVM model is the coefficient of determination of the prediction values and target values. In other words, the higher the score is, the more accurate the SVM estimation is. The basic approach is to performe grid search on hyperparameters for common kernels. 10-fold cross validation is used to split the datasets into training sets and test sets. The search spaces for the hyperparameters are geometric series with base 10, covering wide ranges of parapemeter spaces surrounding the optimum values (the polynomial degree is an exception, which is a drawn from a linear series). Table \ref{tab:models} shows the kernels considered, the best parameters for each of them and corresponding best scores (1 is the maximum possible score). The target value in the dataset is latency.
+\subsection{Regression SVM latency model accuracy evaluation}
+With a prospect of more rapid training and more accurate prediction, I upgraded the SVM from a ranking SVM to a regression SVM \cite{chang2011libsvm}. The objective in this step is to find a good SVM model: a good kernel function with corresponding hyperparameters. The score(metric) of a SVM model is the coefficient of determination of the prediction values and target values. In other words, the higher the score is, the more accurate the SVM estimation is. The basic approach is to performe grid search on hyperparameters for common kernels. 10-fold cross validation is used to split the datasets into training sets and test sets. The search spaces for the hyperparameters are geometric series with base 10, covering wide ranges of parapemeter spaces surrounding the optimum values (the polynomial degree is an exception, which is a drawn from a linear series). Table \ref{tab:latency} shows the kernels considered, the best parameters for each of them and corresponding best scores (1 is the maximum possible score). The target value in the dataset is latency. Linear, polynomial and rbf kernels all have good estimation accuracies, while sigmoid does not.
 \begin{table}[htb]
   \centering
   \begin{tabularx}{\textwidth}{|l|l|l|X|} \hline
     kernel & best parameters & best score & comment \\ \hline
     linear & {'C': 1.0} & 0.997911262124 & linear kernel shows unexpected good performance \\ \hline
     poly & {'C': 10.0, 'degree': 1} & 0.997904758134 & polynomial kernel performs well; the optimum degree is 1, it differs from linear kernel only by a constant variable in the estimation value \\ \hline
-    rbf & {'C': 10.0, 'gamma': 0.1} & 0.998510004994 & rbf kernel has the best performance \\ \hline
+    rbf & {'C': 10.0, 'gamma': 0.1} & 0.998510004994 & radial basis function kernel has the best performance \\ \hline
     sigmoid & {'C': 0.0001} & -0.117680908896 & sigmoid has bad performance \\ \hline
   \end{tabularx}
-  \caption{Regression SVM model optimization results for 4 kernels}
-  \label{tab:models}
+  \caption{Regression SVM latency model evaluation results for 4 kernels}
+  \label{tab:latency}
+\end{table}
+\subsection{Regression SVM power model accuracy evaluation}
+In this step, I evaluate the estimation accuracy of target variable power for different kernels. The approach is the same as that in previous step. Table \ref{tab:power} shows the evaluation results for different kernels. The results are similar to the previous step.
+\begin{table}[htb]
+  \centering
+  \begin{tabularx}{\textwidth}{|l|l|l|X|} \hline
+    kernel & best parameters & best score & comment \\ \hline
+    linear & {'C': 100.0} & 0.966341472123 & linear kernel performs well \\ \hline
+    poly & {'C': 10.0, 'degree': 1} & 0.96634104226 & polynomial kernel performs well; the optimum degree is 1 \\ \hline
+    rbf & {'C': 100.0, 'gamma': 0.1} & 0.996458564078 & radial basis function kernel has the best performance \\ \hline
+    sigmoid & {'C': 0.01} & -0.10638804199 & sigmoid has bad performance \\ \hline
+  \end{tabularx}
+  \caption{Regression SVM power model evaluation results for 4 kernels}
+  \label{tab:power}
 \end{table}
 
 \section{Next steps}
-\subsection{Energy estimation reevaluation}
-Test the performance of the new estimators for energy estimation.
-\subsection{Optimization for energy latency product}
-2 SVM regressor are generated to estimate 2 metrics: energy and latency. One of them fits to the data for the target energy, ignoring latency; the other fits to the data for the target latency, ignoring energy.
+\subsection{Network optimization for power latency product}
+This is the first try of network optimization for low power latency product. The goal is to assess the current performance of SVM regression. The network quality is defined as the product of power and latency. 2 SVMs independently estimate 2 metric targets of a network: power and latency. One of them fits to the data for the target power, ignoring latency; the other fits to the data for the target latency, ignoring power. Based on previous model accuracy evaluations, both of the SVM adopt rbf kernels with hyperparameters optimized by grid search.
 \subsection{More expressive design features}
 This is an important way to improve the design quality in the long run. I will record the states of the searches and their features, qualities predicted by the objective function and also assessed by the simulator. Then I need to identify the search process where model predictions deviate from simulation assessment, and also characterize the common bad features of these designs which the learning has not taken into account yet, using domain knowledge specific for network on chip design. The I can add these new features that reflect the drawbacks of these networks into the learning problem. In this way, the objective function will relate these features to design qualities through learning and prevent future searches from getting into these bad states.
 \subsection{New learners: Boosted Regression Trees and LambdaMART}

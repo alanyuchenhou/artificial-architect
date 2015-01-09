@@ -1,5 +1,20 @@
 #!/usr/bin/env python
 
+# modify stdout to flush stream after every call
+# class Unbuffered(object):
+#     def __init__(self, stream):
+#         self.stream = stream
+#     def write(self, data):
+#         self.stream.write(data)
+#         self.stream.flush()
+#     def __getattr__(self, attr):
+#         return getattr(self.stream, attr)
+# import sys
+# sys.stdout = Unbuffered(sys.stdout)
+
+# time_stamp = strftime('%Y-%m-%d-%H-%M-%S')
+# check_call(['mv', TRACE, TRACE[:5] + '-' + time_stamp + TRACE[5:]])
+
 from time import strftime
 from itertools import cycle
 from subprocess import check_call
@@ -22,6 +37,10 @@ from matplotlib.pyplot import show
 from matplotlib.pyplot import savefig
 from matplotlib.pyplot import plotfile
 from matplotlib.font_manager import FontProperties
+TRACE = 'trace.dat'
+FIGURE = 'trace.png'
+DOCUMENT = 'architect'
+
 # data_file = 'web-Google_sorted'
 # with open(data_file + ".csv", 'r') as old_data:
 #     with open(data_file + ".final.csv", 'w') as new_data:
@@ -37,11 +56,6 @@ from matplotlib.font_manager import FontProperties
 #                 speedup = singlethread_runtime / multithread_runtime
 #             record.append(' ' + str(speedup))
 #             data_writer.writerow(record)
-
-TRACE = 'trace.dat'
-FIGURE = 'trace.png'
-DOCUMENT = 'architect'
-time_stamp = strftime('%Y-%m-%d-%H-%M-%S')
 
 data = genfromtxt(TRACE, delimiter = '\t', names = True)
 styles = cycle(('--', '-.', '-', ':'))
