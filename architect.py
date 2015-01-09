@@ -84,22 +84,22 @@ class Learner(object):
         scaler.fit(unscaled_dataset)
         dataset = scaler.transform(unscaled_dataset)
         reversed_dataset = scaler.inverse_transform(dataset)
-        subdataset = hsplit(dataset,[1])
-        kernels = ['linear', 'poly', 'rbf']
+        subdataset = hsplit(dataset,[1,2])
+        kernels = ['linear', 'poly', 'rbf', 'sigmoid']
         for kernel in kernels:
             svr = SVR(kernel)
-            # parameters = {'kernel':[kernel], 'C':logspace(-4, 4, 9).tolist()}
-            parameters = {'C':logspace(-2, 2, 5).tolist()}
+            parameters = {'C':logspace(0, 4, 5).tolist()}
             if kernel == 'poly':
                 parameters['degree'] = linspace(1, 4, 4, dtype = 'int').tolist()
             if kernel == 'rbf':
-                parameters['gamma'] = logspace(-4, 4, 9).tolist()
+                parameters['gamma'] = logspace(0, 8, 9).tolist()
             # print parameters
             regressor = GridSearchCV(svr, parameters, cv = 10, n_jobs = -1)
-            regressor.fit(subdataset[1][:-10], squeeze(subdataset[0])[:-10])
+            regressor.fit(subdataset[2][:-10], squeeze(subdataset[1])[:-10])
             print 'kernel=', kernel,
             print 'best_params=', regressor.best_params_,
             print 'best_score=', regressor.best_score_
+
             # print regressor.predict(subdataset[1][-10:])
             # print squeeze(subdataset[0][-10:])
     def build_model(self, DATABASE):
@@ -249,5 +249,5 @@ optimization = Optimization()
 # check_call(['mv', TRACE, TRACE[:5] + '-' + time_stamp + TRACE[5:]])
 # final = hill_climbing_random_restarts(optimization, 10, 1000)
 
-# learner.evaluate_kernels(DATASET)
-performer.build_dataset()
+# performer.build_dataset()
+learner.evaluate_kernels(DATASET)
