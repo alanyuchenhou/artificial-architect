@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-from sys import exit
 from os import devnull
 from copy import copy
 from cProfile import run
@@ -12,7 +11,6 @@ from shlex import split
 from time import sleep
 from time import strftime
 from subprocess import check_call
-from subprocess import call
 from subprocess import Popen
 from subprocess import PIPE
 from simpleai.search import SearchProblem
@@ -50,23 +48,10 @@ from sklearn.svm import SVC
 from sklearn.grid_search import GridSearchCV
 from sklearn.preprocessing import scale
 from sklearn.preprocessing import StandardScaler
-NODE_COUNT = 64
-SIMULATION_LOG = 'simulation.log'
-DATASET = 'dataset.dat'
-TRACE = 'trace.dat'
-SIMULATOR = 'booksim2/src/booksim'
-TOPOLOGY = 'booksim2/src/examples/anynet/anynet_file'
-CONFIGURATION = 'booksim2/src/examples/anynet/anynet_config'
-
-# INSTANCE = 'instance.dat'
-# DATABASE = 'database.dat'
-# SIMULATOR = 'simulator.out'
-# TOPOLOGY = 'sw_connection.txt'
-# draw(graph1)
 
 class Critic(object):
-    def evaluate_kernels(self, DATASET):
-        [dataset, scaler] = actuator.load_data(DATASET)
+    def evaluate_kernels(self, dataset):
+        data = actuator.load_data(dataset)
         kernels = ['linear', 'poly', 'rbf', 'sigmoid']
         for kernel in kernels:
             svr = SVR(kernel)
@@ -75,15 +60,14 @@ class Critic(object):
                 parameters['degree'] = linspace(1, 4, 4, dtype = 'int').tolist()
             if kernel == 'rbf':
                 parameters['gamma'] = logspace(-4, 0, 5).tolist()
-            # print parameters
             estimator = GridSearchCV(svr, parameters, cv = 10, n_jobs = -1)
-            estimator.fit(dataset[2][:-10], dataset[1][:-10])
+            estimator.fit(data[2][:-10], data[1][:-10])
             print 'kernel=', kernel,
             print 'best_params=', estimator.best_params_,
             print 'best_score=', estimator.best_score_
 class Learner(object):
-    def build_estimators(self, DATASET, target_count):
-        [dataset, scaler] = actuator.load_data(DATASET, target_count)
+    def build_estimators(self, dataset, target_count):
+        data = actuator.load_data(dataset)
         c_range = 8
         gamma_range = 8
         parameters = {'C' : logspace(0, c_range-1, c_range).tolist(),
@@ -92,80 +76,85 @@ class Learner(object):
         for i in range(target_count):
             svrs.append(SVR('rbf'))
             estimators.append(GridSearchCV(svrs[i], parameters, n_jobs = -1))
-            estimators[i].fit(dataset[target_count], dataset[i])
+            estimators[i].fit(data[target_count], data[i])
             print 'best_params=', estimators[i].best_params_,
             print 'best_score=', estimators[i].best_score_
-        return [estimators, scaler]
+        return estimators
 
 class Performer(object):
+    NODE_COUNT = 64
+    TARGET_NAMES = ['latency', 'power']
+    TARGET_TOKENS = ['Packet latency average = ', '- Total Power:             ']
+    DATASET = 'dataset.dat'
+    TRACE = 'trace.dat'
     estimators = []
-    scaler = StandardScaler()
-    def update_estimators(self, DATASET, target_count):
-        [self.estimators, self.scaler] = learner.build_estimators(DATASET, target_count)
-    def generate_random_graph(self, NODE_COUNT, edge_count):
+    def update_estimators(self, dataset):
+        self.estimators = learner.build_estimators(dataset, len(TARGET_NAMES))
+    def generate_random_graph(self, degree):
         while True:
-            graph = gnm_random_graph(NODE_COUNT, edge_count)
+            graph = gnm_random_graph(self.NODE_COUNT, self.NODE_COUNT*degree)
             if is_connected(graph):
                 return graph
     def extract_features(self, graph):
         features = [number_of_edges(graph), average_shortest_path_length(graph),
                     diameter(graph), radius(graph)]
         return features
-    def estimate_targets(self, raw_features, target_count):
-        raw_sample = asarray(range(target_count) + raw_features)
-        scaled_sample = scaler.transform(raw_sample)
+    def estimate_targets(self, raw_features):
+        raw_sample = asarray(range(self.target_count) + raw_features)
+        scaled_sample = actuator.scaler.transform(raw_sample)
         targets = []
-        for i in target_count:
-            targets.append(estimators[i].predict(scaled_sample[target_count:]))
+        for i in self.target_count:
+            targets.append(estimators[i].predict(scaled_sample[self.target_count:]))
         return targets
     def evaluate_quality(self, targets):
         quality = - reduce(mul, targets, 1)
-    def build_dataset(self, NODE_COUNT, TOPOLOGY, SIMULATION_LOG, DATASET):
+    def build_dataset(self):
+        with open(self.TRACE, 'w') as stream:
+            print >> stream, 'latency \t power \t edge_count \t path_length \t diameter \t radius'
         for round in range(1000):
-            graph = self.generate_random_graph(NODE_COUNT, NODE_COUNT*uniform(2, 16))
-            actuator.save_data(graph, DATASET)
+            graph = self.generate_random_graph(uniform(2, 16))
+            actuator.add_data(graph, self.TARGET_TOKENS, self.DATASET)
 
 class Sensor(object):
-    def extract_targets(self, SIMULATION_LOG):
-        with open(SIMULATION_LOG, 'r') as simulation_log:
-            targets = ['Packet latency average = ', '- Total Power:             ']
-            values = copy(targets)
-            for line in simulation_log:
-                for index in range(len(targets)):
-                    if line.startswith(targets[index]):
-                        value_string = (line.replace(targets[index], '').partition(' ')[0])
-                        values[index] = float(value_string)
-        return values
+    def extract_targets(self, simulation_log, target_tokens):
+        with open(simulation_log, 'r') as stream:
+            target_values = copy(target_tokens)
+            for line in stream:
+                for index in range(len(target_tokens)):
+                    if line.startswith(target_tokens[index]):
+                        value_string = (line.replace(target_tokens[index], '').partition(' ')[0])
+                        target_values[index] = float(value_string)
+        return target_values
     
 class Actuator(object):
-    def configure(self, graph, TOPOLOGY):
-        connection = to_dict_of_lists(graph)
-        with open(TOPOLOGY, 'w+') as configuration:
-            for source in connection:
-                print >> configuration, 'router', source, 'node', source,\
-                'router', ' router '.join(map(str, connection[source]))
-    def simulate(self, SIMULATION_LOG):
-        with open(SIMULATION_LOG, 'w') as log:
-            check_call([SIMULATOR, CONFIGURATION], stdout = log)
-    def save_data(self, state, data_file):
-        self.configure(state, TOPOLOGY)
-        self.simulate()
-        sample = sensor.extract_targets(SIMULATION_LOG) + performer.extract_features(state)
-        with open(data_file, 'a') as out:
-            print >> out, '\t'.join(map(str, sample))
-    def load_data(self, DATASET):
-        raw_dataset = loadtxt(DATASET)
-        scaler = StandardScaler()
-        scaler.fit(raw_dataset)
-        scaled_dataset = scaler.transform(raw_dataset)
-        # reversed_dataset = scaler.inverse_transform(scaled_dataset)
+    # TOPOLOGY = 'sw_connection.txt'
+    TOPOLOGY = 'booksim2/src/examples/anynet/anynet_file'
+    CONFIGURATION = 'booksim2/src/examples/anynet/anynet_config'
+    SIMULATOR = 'booksim2/src/booksim'
+    SIMULATION_LOG = 'simulation.log'
+    scaler = StandardScaler()
+    def load_data(self, dataset):
+        raw_dataset = loadtxt(dataset)
+        self.scaler.fit(raw_dataset)
+        scaled_dataset = self.scaler.transform(raw_dataset)
         split_dataset = map(squeeze, hsplit(scaled_dataset,[1,2]))
-        return [split_dataset, scaler]
-    def write(self, sample, DATABASE):
-        with open(DATABASE, 'a') as database:
-            print >> database, '\t'.join(map(str, sample))
+        return split_dataset
+    def add_data(self, graph, target_tokens, dataset):
+        connection = to_dict_of_lists(graph)
+        with open(self.TOPOLOGY, 'w+') as stream:
+            for source in connection:
+                destinations = 'router ' + ' router '.join(map(str, connection[source]))
+                print >> stream, 'router', source, 'node', source, destinations
+        with open(self.SIMULATION_LOG, 'w') as stream:
+            check_call([self.SIMULATOR, self.CONFIGURATION], stdout = stream)
+        targets = sensor.extract_targets(self.SIMULATION_LOG, target_tokens)
+        features = performer.extract_features(graph)
+        sample = targets + features
+        raw_sample = self.scaler.inverse_transform(asarray(sample))
+        with open(dataset, 'a') as stream:
+            print >> stream, '\t'.join(map(str, raw_sample.tolist()))
     # def simulate(self, args, SIMULATION_LOG):
-    # parameters = [1,8,1,64,11,64,64,5,0,0,4,7,1.8,'s',6,1,1,'r']
+    #     parameters = [1,8,1,64,11,64,64,5,0,0,4,7,1.8,'s',6,1,1,'r']
     #     # print '################################################################'
     #     print 'actuator.simulate: simulation started'
     #     process1 = Popen([args], stdin=PIPE, stdout=PIPE, stderr=PIPE)
@@ -194,22 +183,10 @@ class Actuator(object):
     #     fill_diagonal(side,2)
     #     configuration = hstack((vstack((all_disconnected, side)), vstack((side, adjacency))))
     #     savetxt(TOPOLOGY, configuration, fmt='%d')
-    # def combine(self, score, features): # depreciated
-    #     data_instance = []
-    #     data_instance.append(str(score))
-    #     data_instance.append('qid:1')
-    #     for index in range(len(features)):
-    #         data_instance.append(str(index+1) + ':' + str(features[index]))
-    #     return data_instance
-    # def divide(self, DATABASE): # depreciated
-    #     with open('train.dat', 'w+') as out:
-    #         check_call(['sed', '-e', '1,10d', DATABASE], stdout = out)
-    #     with open('test.dat', 'w+') as out:
-    #         check_call(['sed', '-n', '1,10p', DATABASE], stdout = out)
 
 class Optimization(SearchProblem):
     def actions(self, state):
-        actuator.save_data(state, DATASET)
+        actuator.add_data(self, state, performer.TARGET_TOKENS, performer.TRACE)
         successors = []
         for cluster in combinations(nodes(state),2):
             successor = state.copy()
@@ -224,14 +201,12 @@ class Optimization(SearchProblem):
     def result(self, state, action):
         return action
     def value(self, state):
-        features = performer.extract_features(state)
-        score = performer.assess(features)
-        return score
+        raw_features = performer.extract_features(state)
+        targets = estimate_targets(raw_features)
+        quality = performer.evaluate_quality(targets)
+        return quality
     def generate_random_state(self):
-        with open(TRACE, 'a') as trace:
-            print >> trace, 'power \t latency \t edge_count \t path_length \t diameter \t radius'
-            graph = performer.generate_random_graph(NODE_COUNT, NODE_COUNT*uniform(2, 16))
-        # learner.build_estimators(DATABASE)
+        graph = performer.generate_random_graph(NODE_COUNT, NODE_COUNT*uniform(2, 16))
         return graph
 
 learner = Learner()
@@ -240,6 +215,6 @@ actuator = Actuator()
 sensor = Sensor()
 optimization = Optimization()
 
-# learner.build_estimators(DATASET)
+performer.update_estimators(DATASET)
 # final = hill_climbing_random_restarts(optimization, 10, 1000)
 
