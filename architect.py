@@ -69,8 +69,8 @@ class Learner(object):
     DATASET = 'dataset.dat'
     def build_estimators(self, dataset, target_count):
         data = actuator.load_data(dataset)
-        c_range = 4
-        gamma_range = 4
+        c_range = 8
+        gamma_range = 8
         parameters = {'C' : logspace(0, c_range-1, c_range).tolist(),
                       'gamma' : logspace(1-gamma_range, 0, gamma_range).tolist()}
         estimators = []
@@ -91,6 +91,9 @@ class Performer(object):
     TRACE = 'trace.dat'
     estimators = []
     def update_estimators(self, dataset):
+        names = 'latency*power \t latency \t power \t edge_count \t path_length \t diameter \t radius'
+        with open(self.TRACE, 'w') as stream:
+            print >> stream, names
         self.estimators = learner.build_estimators(dataset, self.TARGET_COUNT)
     def generate_random_graph(self, degree):
         while True:
@@ -98,21 +101,18 @@ class Performer(object):
             if is_connected(graph):
                 return graph
     def extract_features(self, graph):
-        features = [number_of_edges(graph), average_shortest_path_length(graph),
+        raw_features = [number_of_edges(graph), average_shortest_path_length(graph),
                     diameter(graph), radius(graph)]
-        return features
-    def estimate_targets(self, raw_features):
+        return raw_features
+    def estimate_sample(self, raw_features):
         raw_sample = asarray(range(self.TARGET_COUNT) + raw_features)
         sample = actuator.scaler.transform(raw_sample)
-        targets = []
         for i in range(self.TARGET_COUNT):
-            targets += (self.estimators[i].predict(sample[self.TARGET_COUNT:])).tolist()
-        return targets
-    def evaluate_quality(self, targets):
-        return - reduce(mul, targets, 1)
+            sample[i] = (self.estimators[i].predict(sample[self.TARGET_COUNT:])).tolist()[0]
+        return sample
+    def evaluate_quality(self, raw_sample):
+        return - raw_sample[0] * raw_sample[1]
     def build_dataset(self):
-        with open(self.TRACE, 'w') as stream:
-            print >> stream, 'latency \t power \t edge_count \t path_length \t diameter \t radius'
         for round in range(1000):
             graph = self.generate_random_graph(uniform(2, 16))
             actuator.add_data(graph, self.TARGET_TOKENS, learner.DATASET)
@@ -149,14 +149,13 @@ class Actuator(object):
                 print >> stream, 'router', source, 'node', source, destinations
         with open(self.SIMULATION_LOG, 'w') as stream:
             check_call([self.SIMULATOR, self.CONFIGURATION], stdout = stream)
-        targets = sensor.extract_targets(self.SIMULATION_LOG, target_tokens)
-        features = performer.extract_features(graph)
-        sample = targets + features
+        raw_targets = sensor.extract_targets(self.SIMULATION_LOG, target_tokens)
+        raw_features = performer.extract_features(graph)
+        raw_sample = raw_targets + raw_features
         if dataset == performer.TRACE:
-            sample.insert(0, performer.evaluate_quality(targets))
-        # raw_sample = self.scaler.inverse_transform(asarray(sample))
+            raw_sample.insert(0, -performer.evaluate_quality(raw_sample))
         with open(dataset, 'a') as stream:
-            print >> stream, '\t'.join(map(str, sample))
+            print >> stream, '\t'.join(map(str, raw_sample))
     # def simulate(self, args, SIMULATION_LOG):
     #     parameters = [1,8,1,64,11,64,64,5,0,0,4,7,1.8,'s',6,1,1,'r']
     #     # print '################################################################'
@@ -206,8 +205,9 @@ class Optimization(SearchProblem):
         return action
     def value(self, state):
         raw_features = performer.extract_features(state)
-        targets = performer.estimate_targets(raw_features)
-        quality = performer.evaluate_quality(targets)
+        sample = performer.estimate_sample(raw_features)
+        raw_sample = actuator.scaler.inverse_transform(asarray(sample))
+        quality = performer.evaluate_quality(raw_sample)
         return quality
     def generate_random_state(self):
         state = performer.generate_random_graph(uniform(2, 16))
@@ -221,4 +221,3 @@ optimization = Optimization()
 
 performer.update_estimators(learner.DATASET)
 final = hill_climbing_random_restarts(optimization, 10, 1000)
-
