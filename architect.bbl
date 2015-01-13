@@ -1,4 +1,4 @@
-\begin{thebibliography}{1}
+\begin{thebibliography}{10}
 
 \bibitem{amoretti2014modeling}
 Michele Amoretti.
@@ -52,5 +52,12 @@ Stuart Russell, Peter Norvig, and Artificial Intelligence.
 \newblock A modern approach.
 \newblock {\em Artificial Intelligence. Prentice-Hall, Egnlewood Cliffs}, 25,
   1995.
+
+\bibitem{skeie2002layered}
+Tor Skeie, Olav Lysne, and Ingebj{\o}rg Theiss.
+\newblock Layered shortest path (lash) routing in irregular system area
+  networks.
+\newblock In {\em Parallel and Distributed Processing Symposium,
+  International}, volume~2, pages 0162--0162. IEEE Computer Society, 2002.
 
 \end{thebibliography}

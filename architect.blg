@@ -4,45 +4,45 @@ The style file: plain.bst
 Database file #1: architect.bib
 Warning--empty journal in demasiusing
 Warning--empty year in demasiusing
-You've used 9 entries,
+You've used 10 entries,
             2118 wiz_defined-function locations,
-            548 strings with 5754 characters,
-and the built_in function-call counts, 3120 in all, are:
-= -- 297
-> -- 175
-< -- 2
-+ -- 72
-- -- 60
-* -- 216
-:= -- 535
-add.period$ -- 28
-call.type$ -- 9
-change.case$ -- 56
+            555 strings with 5986 characters,
+and the built_in function-call counts, 3667 in all, are:
+= -- 357
+> -- 193
+< -- 4
++ -- 79
+- -- 66
+* -- 251
+:= -- 611
+add.period$ -- 32
+call.type$ -- 10
+change.case$ -- 62
 chr.to.int$ -- 0
-cite$ -- 11
-duplicate$ -- 118
-empty$ -- 221
-format.name$ -- 60
-if$ -- 641
+cite$ -- 12
+duplicate$ -- 143
+empty$ -- 265
+format.name$ -- 66
+if$ -- 769
 int.to.chr$ -- 0
-int.to.str$ -- 9
-missing$ -- 10
-newline$ -- 47
-num.names$ -- 18
-pop$ -- 63
+int.to.str$ -- 10
+missing$ -- 11
+newline$ -- 52
+num.names$ -- 20
+pop$ -- 71
 preamble$ -- 1
-purify$ -- 48
+purify$ -- 53
 quote$ -- 0
-skip$ -- 84
+skip$ -- 105
 stack$ -- 0
-substring$ -- 141
-swap$ -- 26
-text.length$ -- 2
+substring$ -- 186
+swap$ -- 40
+text.length$ -- 4
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 34
+type$ -- 38
 warning$ -- 2
-while$ -- 27
-width$ -- 10
-write$ -- 97
+while$ -- 32
+width$ -- 12
+write$ -- 110
 (There were 2 warnings)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from os import devnull
+from pprint import pprint
 from copy import copy
 from cProfile import run
 from itertools import combinations
@@ -21,7 +22,6 @@ from networkx import get_node_attributes
 from networkx import get_edge_attributes
 from networkx import neighbors
 from networkx import is_connected
-from networkx import average_shortest_path_length
 from networkx import diameter
 from networkx import number_of_edges
 from networkx import radius
@@ -32,6 +32,8 @@ from networkx import gnm_random_graph
 from networkx import to_numpy_matrix
 from networkx import to_dict_of_lists
 from networkx import to_dict_of_dicts
+from networkx import shortest_path_length
+from networkx import shortest_path
 from numpy import loadtxt
 from numpy import savetxt
 from numpy import arange
@@ -89,10 +91,11 @@ learner = Learner()
 
 class Performer(object):
     DIMENSION = 2
-    RADIX = 4
-    NODE_COUNT = RADIX ** 2
-    DEGREE_MIN = 1.5
-    DEGREE_MAX = 8
+    RADIX = 2
+    NODE_COUNT = RADIX ** DIMENSION
+    NODE_WEIGHT = 3
+    DEGREE_MIN = 1.2
+    DEGREE_MAX = 2
     TARGET_NAMES = ['latency', 'power']
     TARGET_TOKENS = ['Packet latency average = ', '- Total Power:             ']
     TARGET_COUNT = len(TARGET_NAMES)
@@ -104,7 +107,7 @@ class Performer(object):
             print >> stream, names
         self.estimators = learner.build_estimators(dataset, self.TARGET_COUNT)
     def distance(self, graph, source, destination):
-        distance = 0
+        distance = graph.node[source]['weight']
         for i in range(self.DIMENSION):
             distance += abs(graph.node[source]['position'][i] - graph.node[destination]['position'][i])
         return distance
@@ -119,11 +122,12 @@ class Performer(object):
             if is_connected(graph):
                 for node_index, data in graph.nodes(data=True):
                     data['position'] = [node_index / self.RADIX, node_index % self.RADIX]
+                    data['weight'] = self.NODE_WEIGHT
                 for source, destination, data in graph.edges(data=True):
                     data['weight'] = self.distance(graph, source, destination)
                 return graph
     def extract_features(self, graph):
-        raw_features = [number_of_edges(graph), average_shortest_path_length(graph),
+        raw_features = [number_of_edges(graph), average_shortest_path_length(graph, 'weight'),
                     diameter(graph), radius(graph)]
         return raw_features
     def estimate_sample(self, raw_features):
@@ -139,8 +143,13 @@ class Performer(object):
             graph = self.generate_random_graph(uniform(self.DEGREE_MIN, self.DEGREE_MAX))
             actuator.add_data(graph, self.TARGET_TOKENS, learner.DATASET)
 performer = Performer()
-graph = performer.generate_random_graph(2)
-
+graph = performer.generate_random_graph(1.1)
+pprint(graph.edges(data = True))
+pprint(shortest_path_length(graph, weight = 'weight'))
+from matplotlib.pyplot import show
+draw(graph, get_node_attributes(graph, 'position'), hold = True)
+draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
+show()
 
 class Sensor(object):
     def extract_targets(self, simulation_log, target_tokens):
@@ -186,10 +195,6 @@ class Actuator(object):
             print >> stream, '\t'.join(map(str, raw_sample))
 actuator = Actuator()
 # actuator.add_data(graph, performer.TARGET_TOKENS, learner.DATASET)
-# from matplotlib.pyplot import show
-# draw(graph, get_node_attributes(graph, 'position'), hold = True)
-# draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
-# show()
 
     # def simulate(self, args, SIMULATION_LOG):
     #     parameters = [1,8,1,64,11,64,64,5,0,0,4,7,1.8,'s',6,1,1,'r']

@@ -62,7 +62,7 @@ All the data trace are discontinuous because of random restart. Every time the s
 \begin{figure}[htb]
     \centering
     \begin{subfigure}
-      {\includegraphics[width=\textwidth]{trace.png}}
+      {\includegraphics[width=\textwidth]{trace-2015-01-09.png}}
     \end{subfigure}
     \rule{\linewidth}{1pt}
     \caption{The optimization process with latency as the metric during a single hill climbing}
@@ -99,10 +99,20 @@ In this step, I evaluate the estimation accuracy of target variable power for di
   \caption{Regression SVM power model evaluation results for 4 kernels}
   \label{tab:power}
 \end{table}
+\subsection{Network optimization for power latency product}
+This is the first try of network optimization for low power latency product. The goal is to assess the current performance of SVM regression in real action. The network quality is defined as the product of power and latency. 2 SVMs independently estimate 2 metric targets of a network: power and latency. One of them fits to the data for the target power, ignoring latency; the other fits to the data for the target latency, ignoring power. Based on previous model accuracy evaluations, both of the SVM adopt rbf kernels with hyperparameters optimized by grid search. Figure \ref{fig:latency-power} shows the optimization process.
+\begin{figure}[htb]
+    \centering
+    \begin{subfigure}
+      {\includegraphics[width=\textwidth]{trace.png}}
+    \end{subfigure}
+    \rule{\linewidth}{1pt}
+    \caption{An optimization process with quality defined as latency-power product}
+    \label{fig:latency-power}
+\end{figure}
+The search trace recorded in the optimization process suggests the previous upgrades to learning were successful. This optimization process consists of 4 complete(and 1 ongoing) iterations of hill climbing search. Every iteration begins with a random-restart, exhibited by the sharp turning points in the plots. During the optimization, the variance of latency is much smaller than the variance of power, leading to the similarity of trends between power and latency power product.
 
 \section{Next steps}
-\subsection{Network optimization for power latency product}
-This is the first try of network optimization for low power latency product. The goal is to assess the current performance of SVM regression. The network quality is defined as the product of power and latency. 2 SVMs independently estimate 2 metric targets of a network: power and latency. One of them fits to the data for the target power, ignoring latency; the other fits to the data for the target latency, ignoring power. Based on previous model accuracy evaluations, both of the SVM adopt rbf kernels with hyperparameters optimized by grid search.
 \subsection{More expressive design features}
 This is an important way to improve the design quality in the long run. I will record the states of the searches and their features, qualities predicted by the objective function and also assessed by the simulator. Then I need to identify the search process where model predictions deviate from simulation assessment, and also characterize the common bad features of these designs which the learning has not taken into account yet, using domain knowledge specific for network on chip design. The I can add these new features that reflect the drawbacks of these networks into the learning problem. In this way, the objective function will relate these features to design qualities through learning and prevent future searches from getting into these bad states.
 \subsection{New learners: Boosted Regression Trees and LambdaMART}
@@ -204,7 +214,7 @@ The features used to characterize the network are shown in Table \ref{tab:featur
     %% route-cost & average time cost of a route \\ \hline
     %% buffer-size & link buffer size \\ \hline
     %% packet-size & size of packet in bytes \\ \hline
-    %% routing & routing mechanism \\ \hline
+    routing & LASH routing mechanism \cite{skeie2002layered} \\ \hline
     
     %% congestion control & congestion control mechanism \\ \hline
     %% link-count & average number of links connected to a router \\ \hline
