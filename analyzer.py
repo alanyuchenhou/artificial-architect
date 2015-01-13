@@ -54,23 +54,33 @@ from matplotlib.font_manager import FontProperties
 TRACE = 'trace.dat'
 FIGURE = 'trace.png'
 DOCUMENT = 'architect'
-time_stamp = strftime('-%Y-%m-%d')
-check_call(['mv', FIGURE,FIGURE.replace('.', time_stamp + '.')])
-print('what?')
+def archive_plot():
+    time_stamp = strftime('-%Y-%m-%d')
+    check_call(['mv', FIGURE,FIGURE.replace('.', time_stamp + '.')])
 def analyze():
     data = genfromtxt(TRACE, delimiter = '\t', names = True)
     font_properties = FontProperties()
     font_properties.set_size('small')
     figure()
     for column in data.dtype.names:
-        if (column == 'quality'):
-            subplot(311)
-        if (column == 'latency'):
-            subplot(312)
+        if (column == 'edge_count'):
+            subplot(411)
+            plot(data[column], label = column)
+            legend(loc = 'upper right', prop = font_properties).get_frame().set_alpha(.1)
+            xlabel('step')
         if (column == 'power'):
-            subplot(313)
-        plot(data[column], label = column)
-        legend(loc = 'upper right', prop = font_properties).get_frame().set_alpha(.1)
-    xlabel('step')
-    # savefig(FIGURE, dpi = 200)
+            subplot(412)
+            plot(data[column], label = column)
+            legend(loc = 'upper right', prop = font_properties).get_frame().set_alpha(.1)
+        if (column == 'latency'):
+            subplot(413)
+            plot(data[column], label = column)
+            legend(loc = 'upper right', prop = font_properties).get_frame().set_alpha(.1)
+        if (column == 'latency_power_product'):
+            subplot(414)
+            plot(data[column], label = column)
+            legend(loc = 'upper right', prop = font_properties).get_frame().set_alpha(.1)
+            xlabel('step')
+    savefig(FIGURE, dpi = 200)
     check_call(['pdflatex', DOCUMENT])
+analyze()
