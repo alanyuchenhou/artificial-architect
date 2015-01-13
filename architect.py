@@ -17,6 +17,9 @@ from simpleai.search import SearchProblem
 from simpleai.search.local import hill_climbing_random_restarts
 from networkx import Graph
 from networkx import nodes
+from networkx import get_node_attributes
+from networkx import get_edge_attributes
+from networkx import neighbors
 from networkx import is_connected
 from networkx import average_shortest_path_length
 from networkx import diameter
@@ -24,7 +27,7 @@ from networkx import number_of_edges
 from networkx import radius
 from networkx import density
 from networkx import draw
-from networkx import random_regular_graph
+from networkx import draw_networkx_edge_labels
 from networkx import gnm_random_graph
 from networkx import to_numpy_matrix
 from networkx import to_dict_of_lists
@@ -82,23 +85,42 @@ class Learner(object):
             print 'best_params=', estimators[i].best_params_,
             print 'best_score=', estimators[i].best_score_
         return estimators
+learner = Learner()
 
 class Performer(object):
-    NODE_COUNT = 64
+    DIMENSION = 2
+    RADIX = 4
+    NODE_COUNT = RADIX ** 2
+    DEGREE_MIN = 1.5
+    DEGREE_MAX = 8
     TARGET_NAMES = ['latency', 'power']
     TARGET_TOKENS = ['Packet latency average = ', '- Total Power:             ']
     TARGET_COUNT = len(TARGET_NAMES)
     TRACE = 'trace.dat'
     estimators = []
     def update_estimators(self, dataset):
-        names = 'latency*power \t latency \t power \t edge_count \t path_length \t diameter \t radius'
+        names = 'latency_power_product \t latency \t power \t edge_count \t path_length \t diameter \t radius'
         with open(self.TRACE, 'w') as stream:
             print >> stream, names
         self.estimators = learner.build_estimators(dataset, self.TARGET_COUNT)
+    def distance(self, graph, source, destination):
+        distance = 0
+        for i in range(self.DIMENSION):
+            distance += abs(graph.node[source]['position'][i] - graph.node[destination]['position'][i])
+        return distance
+    def center(self, graph, source, destination):
+        center = [source, destination]
+        for i in range(self.DIMENSION):
+            center[i] = .5*(graph.node[source]['position'][i] + graph.node[destination]['position'][i])
+        return center
     def generate_random_graph(self, degree):
         while True:
             graph = gnm_random_graph(self.NODE_COUNT, self.NODE_COUNT*degree)
             if is_connected(graph):
+                for node_index, data in graph.nodes(data=True):
+                    data['position'] = [node_index / self.RADIX, node_index % self.RADIX]
+                for source, destination, data in graph.edges(data=True):
+                    data['weight'] = self.distance(graph, source, destination)
                 return graph
     def extract_features(self, graph):
         raw_features = [number_of_edges(graph), average_shortest_path_length(graph),
@@ -114,8 +136,11 @@ class Performer(object):
         return - raw_sample[0] * raw_sample[1]
     def build_dataset(self):
         for round in range(1000):
-            graph = self.generate_random_graph(uniform(2, 16))
+            graph = self.generate_random_graph(uniform(self.DEGREE_MIN, self.DEGREE_MAX))
             actuator.add_data(graph, self.TARGET_TOKENS, learner.DATASET)
+performer = Performer()
+graph = performer.generate_random_graph(2)
+
 
 class Sensor(object):
     def extract_targets(self, simulation_log, target_tokens):
@@ -127,6 +152,7 @@ class Sensor(object):
                         value_string = (line.replace(target_tokens[index], '').partition(' ')[0])
                         target_values[index] = float(value_string)
         return target_values
+sensor = Sensor()
     
 class Actuator(object):
     # TOPOLOGY = 'sw_connection.txt'
@@ -142,11 +168,13 @@ class Actuator(object):
         split_dataset = map(squeeze, hsplit(scaled_dataset,[1,2]))
         return split_dataset
     def add_data(self, graph, target_tokens, dataset):
-        connection = to_dict_of_lists(graph)
         with open(self.TOPOLOGY, 'w+') as stream:
-            for source in connection:
-                destinations = 'router ' + ' router '.join(map(str, connection[source]))
-                print >> stream, 'router', source, 'node', source, destinations
+            for node in graph:
+                destinations = []
+                for destination in graph[node]:
+                    destinations += ['router', str(destination), str(graph[node][destination]['weight'])]
+                destinations_string = ' '.join(map(str, destinations))
+                print 'router', node, 'node', node, destinations_string
         with open(self.SIMULATION_LOG, 'w') as stream:
             check_call([self.SIMULATOR, self.CONFIGURATION], stdout = stream)
         raw_targets = sensor.extract_targets(self.SIMULATION_LOG, target_tokens)
@@ -156,6 +184,13 @@ class Actuator(object):
             raw_sample.insert(0, -performer.evaluate_quality(raw_sample))
         with open(dataset, 'a') as stream:
             print >> stream, '\t'.join(map(str, raw_sample))
+actuator = Actuator()
+# actuator.add_data(graph, performer.TARGET_TOKENS, learner.DATASET)
+# from matplotlib.pyplot import show
+# draw(graph, get_node_attributes(graph, 'position'), hold = True)
+# draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
+# show()
+
     # def simulate(self, args, SIMULATION_LOG):
     #     parameters = [1,8,1,64,11,64,64,5,0,0,4,7,1.8,'s',6,1,1,'r']
     #     # print '################################################################'
@@ -210,14 +245,10 @@ class Optimization(SearchProblem):
         quality = performer.evaluate_quality(raw_sample)
         return quality
     def generate_random_state(self):
-        state = performer.generate_random_graph(uniform(2, 16))
+        state = performer.generate_random_graph(uniform(performer.DEGREE_MIN, performer.DEGREE_MAX))
         return state
-
-learner = Learner()
-performer = Performer()
-actuator = Actuator()
-sensor = Sensor()
 optimization = Optimization()
 
-performer.update_estimators(learner.DATASET)
-final = hill_climbing_random_restarts(optimization, 10, 1000)
+# performer.build_dataset()
+# performer.update_estimators(learner.DATASET)
+# final = hill_climbing_random_restarts(optimization, 4, 1000)
