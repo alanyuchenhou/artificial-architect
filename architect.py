@@ -33,7 +33,7 @@ from networkx import to_numpy_matrix
 from networkx import to_dict_of_lists
 from networkx import to_dict_of_dicts
 from networkx import shortest_path_length
-from networkx import shortest_path
+from networkx import average_shortest_path_length
 from numpy import loadtxt
 from numpy import savetxt
 from numpy import arange
@@ -70,12 +70,13 @@ class Critic(object):
             print 'kernel=', kernel,
             print 'best_params=', estimator.best_params_,
             print 'best_score=', estimator.best_score_
+
 class Learner(object):
     DATASET = 'dataset.dat'
     def build_estimators(self, dataset, target_count):
         data = actuator.load_data(dataset)
-        c_range = 8
-        gamma_range = 8
+        c_range = 5
+        gamma_range = 4
         parameters = {'C' : logspace(0, c_range-1, c_range).tolist(),
                       'gamma' : logspace(1-gamma_range, 0, gamma_range).tolist()}
         estimators = []
@@ -91,18 +92,19 @@ learner = Learner()
 
 class Performer(object):
     DIMENSION = 2
-    RADIX = 2
+    RADIX = 8
     NODE_COUNT = RADIX ** DIMENSION
-    NODE_WEIGHT = 3
+    NODE_WEIGHT = 4
     DEGREE_MIN = 1.2
-    DEGREE_MAX = 2
+    DEGREE_MAX = 4
     TARGET_NAMES = ['latency', 'power']
-    TARGET_TOKENS = ['Packet latency average = ', '- Total Power:             ']
+    TARGET_TOKENS = ['Flit latency average = ', '- Total Power:             ']
     TARGET_COUNT = len(TARGET_NAMES)
     TRACE = 'trace.dat'
     estimators = []
     def update_estimators(self, dataset):
-        names = 'latency_power_product \t latency \t power \t edge_count \t path_length \t diameter \t radius'
+        names = ('latency_power_product \t latency \t power \t' +
+                 'edge_count \t path_length \t diameter \t radius')
         with open(self.TRACE, 'w') as stream:
             print >> stream, names
         self.estimators = learner.build_estimators(dataset, self.TARGET_COUNT)
@@ -139,17 +141,21 @@ class Performer(object):
     def evaluate_quality(self, raw_sample):
         return - raw_sample[0] * raw_sample[1]
     def build_dataset(self):
+        names = ('#latency \t power \t' +
+                 'edge_count \t path_length \t diameter \t radius')
+        with open(learner.DATASET, 'w') as stream:
+            print >> stream, names
         for round in range(1000):
             graph = self.generate_random_graph(uniform(self.DEGREE_MIN, self.DEGREE_MAX))
             actuator.add_data(graph, self.TARGET_TOKENS, learner.DATASET)
 performer = Performer()
-graph = performer.generate_random_graph(1.1)
-pprint(graph.edges(data = True))
-pprint(shortest_path_length(graph, weight = 'weight'))
-from matplotlib.pyplot import show
-draw(graph, get_node_attributes(graph, 'position'), hold = True)
-draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
-show()
+# graph = performer.generate_random_graph(1.1)
+# pprint(graph.edges(data = True))
+# pprint(shortest_path_length(graph, weight = 'weight'))
+# from matplotlib.pyplot import show
+# draw(graph, get_node_attributes(graph, 'position'), hold = True)
+# draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
+# show()
 
 class Sensor(object):
     def extract_targets(self, simulation_log, target_tokens):
@@ -178,14 +184,16 @@ class Actuator(object):
         return split_dataset
     def add_data(self, graph, target_tokens, dataset):
         with open(self.TOPOLOGY, 'w+') as stream:
-            for node in graph:
+            for source in graph:
                 destinations = []
-                for destination in graph[node]:
-                    destinations += ['router', str(destination), str(graph[node][destination]['weight'])]
+                for destination in graph[source]:
+                    destinations += ['router', str(destination),
+                                     str(graph[source][destination]['weight'] - performer.NODE_WEIGHT)]
                 destinations_string = ' '.join(map(str, destinations))
-                print 'router', node, 'node', node, destinations_string
-        with open(self.SIMULATION_LOG, 'w') as stream:
-            check_call([self.SIMULATOR, self.CONFIGURATION], stdout = stream)
+                print >> stream, 'router', source, 'node', source, destinations_string
+        with open(self.SIMULATION_LOG, 'w+') as stream:
+            with open('error.log', 'w+') as error_log:
+                check_call([self.SIMULATOR, self.CONFIGURATION], stdout = stream, stderr = error_log)
         raw_targets = sensor.extract_targets(self.SIMULATION_LOG, target_tokens)
         raw_features = performer.extract_features(graph)
         raw_sample = raw_targets + raw_features
@@ -237,7 +245,8 @@ class Optimization(SearchProblem):
                 if node_pair[0] in successor.neighbors(node_pair[1]):
                     successor.remove_edge(node_pair[0],node_pair[1])
                 else:
-                    successor.add_edge(node_pair[0],node_pair[1])
+                    successor.add_edge(node_pair[0], node_pair[1],
+                                       weight = performer.distance(state, node_pair[0], node_pair[1]))
             if is_connected(successor):
                 successors.append(successor)
         return successors
@@ -254,6 +263,6 @@ class Optimization(SearchProblem):
         return state
 optimization = Optimization()
 
-# performer.build_dataset()
-# performer.update_estimators(learner.DATASET)
-# final = hill_climbing_random_restarts(optimization, 4, 1000)
+performer.build_dataset()
+performer.update_estimators(learner.DATASET)
+final = hill_climbing_random_restarts(optimization, 4, 1000)
