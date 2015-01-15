@@ -39,6 +39,7 @@ from numpy import savetxt
 from numpy import arange
 from numpy import asarray
 from numpy import zeros
+from numpy import average
 from numpy import fill_diagonal
 from numpy import vstack
 from numpy import hstack
@@ -91,6 +92,7 @@ class Learner(object):
 learner = Learner()
 
 class Performer(object):
+    TRAFFIC_BODYTRACK = 'traffic_bodytrack.txt'
     DIMENSION = 2
     RADIX = 8
     NODE_COUNT = RADIX ** DIMENSION
@@ -128,8 +130,16 @@ class Performer(object):
                 for source, destination, data in graph.edges(data=True):
                     data['weight'] = self.distance(graph, source, destination)
                 return graph
+    def weighted_average_path_length(self, graph, weight):
+        raw_path_lengths = shortest_path_length(graph, weight = weight)
+        path_lengths = zeros((self.NODE_COUNT, self.NODE_COUNT))
+        for source in raw_path_lengths:
+            for destination in raw_path_lengths[source]:
+                path_lengths[source][destination] = raw_path_lengths[source][destination]
+        traffic = loadtxt(self.TRAFFIC_BODYTRACK)
+        return average(path_lengths, weights = traffic)
     def extract_features(self, graph):
-        raw_features = [number_of_edges(graph), average_shortest_path_length(graph, 'weight'),
+        raw_features = [number_of_edges(graph), weighted_average_path_length(graph, 'weight'),
                     diameter(graph), radius(graph)]
         return raw_features
     def estimate_sample(self, raw_features):
@@ -149,9 +159,7 @@ class Performer(object):
             graph = self.generate_random_graph(uniform(self.DEGREE_MIN, self.DEGREE_MAX))
             actuator.add_data(graph, self.TARGET_TOKENS, learner.DATASET)
 performer = Performer()
-# graph = performer.generate_random_graph(1.1)
 # pprint(graph.edges(data = True))
-# pprint(shortest_path_length(graph, weight = 'weight'))
 # from matplotlib.pyplot import show
 # draw(graph, get_node_attributes(graph, 'position'), hold = True)
 # draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
@@ -263,6 +271,6 @@ class Optimization(SearchProblem):
         return state
 optimization = Optimization()
 
-performer.build_dataset()
-performer.update_estimators(learner.DATASET)
-final = hill_climbing_random_restarts(optimization, 4, 1000)
+# performer.build_dataset()
+# performer.update_estimators(learner.DATASET)
+# final = hill_climbing_random_restarts(optimization, 4, 1000)
