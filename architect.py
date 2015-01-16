@@ -25,6 +25,8 @@ from networkx import is_connected
 from networkx import diameter
 from networkx import number_of_edges
 from networkx import radius
+from networkx import degree
+from networkx import degree_histogram
 from networkx import density
 from networkx import draw
 from networkx import draw_networkx_edge_labels
@@ -40,6 +42,8 @@ from numpy import arange
 from numpy import asarray
 from numpy import zeros
 from numpy import average
+from numpy import dot
+from numpy.linalg import norm
 from numpy import fill_diagonal
 from numpy import vstack
 from numpy import hstack
@@ -79,7 +83,7 @@ class Learner(object):
         c_range = accuracy
         gamma_range = accuracy
         parameters = {'C' : logspace(0, c_range, c_range+1).tolist(),
-                      'gamma' : logspace(gamma_range, 0, gamma_range+1).tolist()}
+                      'gamma' : logspace(- gamma_range, 0, gamma_range+1).tolist()}
         estimators = []
         svrs = []
         for i in range(target_count):
@@ -97,17 +101,22 @@ class Performer(object):
     RADIX = 8
     NODE_COUNT = RADIX ** DIMENSION
     NODE_WEIGHT = 4
-    DEGREE_MIN = 1.2
-    DEGREE_MAX = 4
+    EDGE_COUNT_MIN = 70
+    EDGE_COUNT_MAX = 200
     TARGET_NAMES = ['latency', 'power']
     TARGET_TOKENS = ['Flit latency average = ', '- Total Power:             ']
     TARGET_COUNT = len(TARGET_NAMES)
     TRACE = 'trace.dat'
     estimators = []
+    FEATURE_NAMES = ['edge_count', 'path_length', 'diameter', 'radius', 'degree_norm']
+    def extract_features(self, graph):
+        raw_features = [number_of_edges(graph), average_shortest_path_length(graph, 'weight'),
+                    diameter(graph), radius(graph), norm(graph.degree().values())**2]
+        return raw_features
     def update_estimators(self, dataset, accuracy):
-        names = ('real_latency_power_product \t real_latency \t real_power \t' +
-                 'predicted_latency_power_product \t predicted_latency \t predicted_power \t' +
-                 'edge_count \t path_length \t diameter \t radius')
+        HEADER = ['latency_power_product'] + TARGET_NAMES
+        names = 'real_' + '\t real_'.join(HEADER) + 'predicted_' + '\t predicted'.join(HEADER)
+        names += '\t' + '\t'.join(FEATURE_NAMES)
         with open(self.TRACE, 'w') as stream:
             print >> stream, names
         self.estimators = learner.build_estimators(dataset, self.TARGET_COUNT, accuracy)
@@ -121,9 +130,9 @@ class Performer(object):
         for i in range(self.DIMENSION):
             center[i] = .5*(graph.node[source]['position'][i] + graph.node[destination]['position'][i])
         return center
-    def generate_random_graph(self, degree):
+    def generate_random_graph(self, edge_count):
         while True:
-            graph = gnm_random_graph(self.NODE_COUNT, self.NODE_COUNT*degree)
+            graph = gnm_random_graph(self.NODE_COUNT, edge_count)
             if is_connected(graph):
                 for node_index, data in graph.nodes(data=True):
                     data['position'] = [node_index / self.RADIX, node_index % self.RADIX]
@@ -139,10 +148,6 @@ class Performer(object):
                 path_lengths[source][destination] = raw_path_lengths[source][destination]
         traffic = loadtxt(self.TRAFFIC_BODYTRACK)
         return average(path_lengths, weights = traffic)
-    def extract_features(self, graph):
-        raw_features = [number_of_edges(graph), average_shortest_path_length(graph, 'weight'),
-                    diameter(graph), radius(graph)]
-        return raw_features
     def estimate_sample(self, raw_features):
         raw_sample = asarray(range(self.TARGET_COUNT) + raw_features)
         predicted_sample = actuator.scaler.transform(raw_sample)
@@ -153,16 +158,16 @@ class Performer(object):
         return predicted_raw_sample
     def evaluate_quality(self, raw_sample):
         return - raw_sample[0] * raw_sample[1]
-    def build_dataset(self):
-        names = ('#latency \t power \t' +
-                 'edge_count \t path_length \t diameter \t radius')
+    def build_dataset(self, instance_count):
         with open(learner.DATASET, 'w') as stream:
-            print >> stream, names
-        for round in range(1000):
-            graph = self.generate_random_graph(uniform(self.DEGREE_MIN, self.DEGREE_MAX))
+            print >> stream, '#', '\t'.join(self.TARGET_NAMES), '\t','\t'.join(self.FEATURE_NAMES)
+        for round in range(instance_count):
+            graph = self.generate_random_graph(uniform(self.EDGE_COUNT_MIN, self.EDGE_COUNT_MAX))
             actuator.add_data(graph, self.TARGET_TOKENS, learner.DATASET)
 performer = Performer()
-# graph = performer.generate_random_graph(2)
+# graph = performer.generate_random_graph(70)
+# print(graph.degree().values())
+# pprint(norm(graph.degree().values())**2)
 # pprint(to_dict_of_lists(graph))
 # from matplotlib.pyplot import show
 # draw(graph, get_node_attributes(graph, 'position'), hold = True)
@@ -211,15 +216,15 @@ class Actuator(object):
         real_raw_targets = sensor.extract_targets(self.SIMULATION_LOG, target_tokens)
         real_raw_sample = real_raw_targets + raw_features
         real_quality = performer.evaluate_quality(real_raw_sample)
-        predicted_raw_sample = performer.estimate_sample(raw_features)
-        predicted_quality = performer.evaluate_quality(predicted_raw_sample)
         data_instance = []
+        if dataset == learner.DATASET:
+            data_instance = real_raw_sample
         if dataset == performer.TRACE:
+            predicted_raw_sample = performer.estimate_sample(raw_features)
+            predicted_quality = performer.evaluate_quality(predicted_raw_sample)
             data_instance = ([- real_quality] + real_raw_targets +
                              [- predicted_quality] + predicted_raw_sample)
-        else:
-            data_instance = real_raw_sample
-        pprint(data_instance)
+        print(data_instance)
         with open(dataset, 'a') as stream:
             print >> stream, '\t'.join(map(str, data_instance))
 actuator = Actuator()
@@ -279,17 +284,19 @@ class Optimization(SearchProblem):
         predicted_quality = performer.evaluate_quality(predicted_raw_sample)
         return predicted_quality
     def generate_random_state(self):
-        state = performer.generate_random_graph(uniform(performer.DEGREE_MIN, performer.DEGREE_MAX))
+        state = performer.generate_random_graph(uniform(performer.EDGE_COUNT_MIN
+                                                        , performer.EDGE_COUNT_MAX))
         return state
 optimization = Optimization()
 
-# performer.build_dataset()
 def optimize():
     RESULT = 'result.log'
-    performer.update_estimators(learner.DATASET, 2)
-    result = hill_climbing_random_restarts(optimization, 1, 10)
+    performer.update_estimators(learner.DATASET, 5)
+    result = hill_climbing_random_restarts(optimization, 1, 1000)
     with open(RESULT, 'a') as stream:
         pprint('################################################################', stream)
         pprint('time' + strftime('-%Y-%m-%d-%H-%m-%S'))
         pprint(['quality', -result.value], stream)
         pprint(to_dict_of_lists(result.state), stream)
+performer.build_dataset(1000)
+# optimize()
