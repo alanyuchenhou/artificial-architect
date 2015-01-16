@@ -31,7 +31,7 @@ from networkx import draw_networkx_edge_labels
 from networkx import gnm_random_graph
 from networkx import to_numpy_matrix
 from networkx import to_dict_of_lists
-from networkx import to_dict_of_dicts
+from networkx import to_edgelist
 from networkx import shortest_path_length
 from networkx import average_shortest_path_length
 from numpy import loadtxt
@@ -74,12 +74,12 @@ class Critic(object):
 
 class Learner(object):
     DATASET = 'dataset.dat'
-    def build_estimators(self, dataset, target_count):
+    def build_estimators(self, dataset, target_count, accuracy):
         data = actuator.load_data(dataset)
-        c_range = 5
-        gamma_range = 4
-        parameters = {'C' : logspace(0, c_range-1, c_range).tolist(),
-                      'gamma' : logspace(1-gamma_range, 0, gamma_range).tolist()}
+        c_range = accuracy
+        gamma_range = accuracy
+        parameters = {'C' : logspace(0, c_range, c_range+1).tolist(),
+                      'gamma' : logspace(gamma_range, 0, gamma_range+1).tolist()}
         estimators = []
         svrs = []
         for i in range(target_count):
@@ -104,12 +104,13 @@ class Performer(object):
     TARGET_COUNT = len(TARGET_NAMES)
     TRACE = 'trace.dat'
     estimators = []
-    def update_estimators(self, dataset):
-        names = ('latency_power_product \t latency \t power \t' +
+    def update_estimators(self, dataset, accuracy):
+        names = ('real_latency_power_product \t real_latency \t real_power \t' +
+                 'predicted_latency_power_product \t predicted_latency \t predicted_power \t' +
                  'edge_count \t path_length \t diameter \t radius')
         with open(self.TRACE, 'w') as stream:
             print >> stream, names
-        self.estimators = learner.build_estimators(dataset, self.TARGET_COUNT)
+        self.estimators = learner.build_estimators(dataset, self.TARGET_COUNT, accuracy)
     def distance(self, graph, source, destination):
         distance = graph.node[source]['weight']
         for i in range(self.DIMENSION):
@@ -130,7 +131,7 @@ class Performer(object):
                 for source, destination, data in graph.edges(data=True):
                     data['weight'] = self.distance(graph, source, destination)
                 return graph
-    def weighted_average_path_length(self, graph, weight):
+    def weighted_average_shortest_path_length(self, graph, weight):
         raw_path_lengths = shortest_path_length(graph, weight = weight)
         path_lengths = zeros((self.NODE_COUNT, self.NODE_COUNT))
         for source in raw_path_lengths:
@@ -139,15 +140,17 @@ class Performer(object):
         traffic = loadtxt(self.TRAFFIC_BODYTRACK)
         return average(path_lengths, weights = traffic)
     def extract_features(self, graph):
-        raw_features = [number_of_edges(graph), weighted_average_path_length(graph, 'weight'),
+        raw_features = [number_of_edges(graph), average_shortest_path_length(graph, 'weight'),
                     diameter(graph), radius(graph)]
         return raw_features
     def estimate_sample(self, raw_features):
         raw_sample = asarray(range(self.TARGET_COUNT) + raw_features)
-        sample = actuator.scaler.transform(raw_sample)
+        predicted_sample = actuator.scaler.transform(raw_sample)
         for i in range(self.TARGET_COUNT):
-            sample[i] = (self.estimators[i].predict(sample[self.TARGET_COUNT:])).tolist()[0]
-        return sample
+            predicted_sample[i] = (self.estimators[i].predict(
+                    predicted_sample[self.TARGET_COUNT:])).tolist()[0]
+        predicted_raw_sample = actuator.scaler.inverse_transform(asarray(predicted_sample)).tolist()
+        return predicted_raw_sample
     def evaluate_quality(self, raw_sample):
         return - raw_sample[0] * raw_sample[1]
     def build_dataset(self):
@@ -159,7 +162,8 @@ class Performer(object):
             graph = self.generate_random_graph(uniform(self.DEGREE_MIN, self.DEGREE_MAX))
             actuator.add_data(graph, self.TARGET_TOKENS, learner.DATASET)
 performer = Performer()
-# pprint(graph.edges(data = True))
+# graph = performer.generate_random_graph(2)
+# pprint(to_dict_of_lists(graph))
 # from matplotlib.pyplot import show
 # draw(graph, get_node_attributes(graph, 'position'), hold = True)
 # draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
@@ -202,13 +206,22 @@ class Actuator(object):
         with open(self.SIMULATION_LOG, 'w+') as stream:
             with open('error.log', 'w+') as error_log:
                 check_call([self.SIMULATOR, self.CONFIGURATION], stdout = stream, stderr = error_log)
-        raw_targets = sensor.extract_targets(self.SIMULATION_LOG, target_tokens)
+
         raw_features = performer.extract_features(graph)
-        raw_sample = raw_targets + raw_features
+        real_raw_targets = sensor.extract_targets(self.SIMULATION_LOG, target_tokens)
+        real_raw_sample = real_raw_targets + raw_features
+        real_quality = performer.evaluate_quality(real_raw_sample)
+        predicted_raw_sample = performer.estimate_sample(raw_features)
+        predicted_quality = performer.evaluate_quality(predicted_raw_sample)
+        data_instance = []
         if dataset == performer.TRACE:
-            raw_sample.insert(0, -performer.evaluate_quality(raw_sample))
+            data_instance = ([- real_quality] + real_raw_targets +
+                             [- predicted_quality] + predicted_raw_sample)
+        else:
+            data_instance = real_raw_sample
+        pprint(data_instance)
         with open(dataset, 'a') as stream:
-            print >> stream, '\t'.join(map(str, raw_sample))
+            print >> stream, '\t'.join(map(str, data_instance))
 actuator = Actuator()
 # actuator.add_data(graph, performer.TARGET_TOKENS, learner.DATASET)
 
@@ -262,15 +275,21 @@ class Optimization(SearchProblem):
         return action
     def value(self, state):
         raw_features = performer.extract_features(state)
-        sample = performer.estimate_sample(raw_features)
-        raw_sample = actuator.scaler.inverse_transform(asarray(sample))
-        quality = performer.evaluate_quality(raw_sample)
-        return quality
+        predicted_raw_sample = performer.estimate_sample(raw_features)
+        predicted_quality = performer.evaluate_quality(predicted_raw_sample)
+        return predicted_quality
     def generate_random_state(self):
         state = performer.generate_random_graph(uniform(performer.DEGREE_MIN, performer.DEGREE_MAX))
         return state
 optimization = Optimization()
 
 # performer.build_dataset()
-# performer.update_estimators(learner.DATASET)
-# final = hill_climbing_random_restarts(optimization, 4, 1000)
+def optimize():
+    RESULT = 'result.log'
+    performer.update_estimators(learner.DATASET, 2)
+    result = hill_climbing_random_restarts(optimization, 1, 10)
+    with open(RESULT, 'a') as stream:
+        pprint('################################################################', stream)
+        pprint('time' + strftime('-%Y-%m-%d-%H-%m-%S'))
+        pprint(['quality', -result.value], stream)
+        pprint(to_dict_of_lists(result.state), stream)
