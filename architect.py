@@ -16,6 +16,7 @@ from subprocess import Popen
 from subprocess import PIPE
 from simpleai.search import SearchProblem
 from simpleai.search.local import hill_climbing_random_restarts
+from simpleai.search.local import simulated_annealing
 from networkx import Graph
 from networkx import nodes
 from networkx import get_node_attributes
@@ -61,7 +62,7 @@ from sklearn.preprocessing import StandardScaler
 
 class Critic(object):
     def evaluate_kernels(self, dataset):
-        data = actuator.load_data(dataset)
+        data = actuator.load_data(dataset, range(performer.SAMPLE_COUNT))
         kernels = ['linear', 'poly', 'rbf', 'sigmoid']
         for kernel in kernels:
             svr = SVR(kernel)
@@ -79,7 +80,7 @@ class Critic(object):
 class Learner(object):
     DATASET = 'dataset.dat'
     def build_estimators(self, dataset, target_count, accuracy):
-        data = actuator.load_data(dataset)
+        data = actuator.load_data(dataset, range(performer.SAMPLE_SIZE))
         c_range = accuracy
         gamma_range = accuracy
         parameters = {'C' : logspace(0, c_range, c_range+1).tolist(),
@@ -106,19 +107,18 @@ class Performer(object):
     TARGET_NAMES = ['latency', 'power']
     TARGET_TOKENS = ['Flit latency average = ', '- Total Power:             ']
     TARGET_COUNT = len(TARGET_NAMES)
-    TRACE = 'trace.dat'
-    estimators = []
     FEATURE_NAMES = ['edge_count', 'path_length', 'diameter', 'radius', 'degree_norm']
+    FEATURE_COUNT = len(FEATURE_NAMES)
+    SAMPLE_SIZE = TARGET_COUNT + FEATURE_COUNT
+    estimators = []
     def extract_features(self, graph):
         raw_features = [number_of_edges(graph), average_shortest_path_length(graph, 'weight'),
                     diameter(graph), radius(graph), norm(graph.degree().values())**2]
         return raw_features
     def update_estimators(self, dataset, accuracy):
-        HEADER = ['latency_power_product'] + TARGET_NAMES
-        names = 'real_' + '\t real_'.join(HEADER) + 'predicted_' + '\t predicted'.join(HEADER)
-        names += '\t' + '\t'.join(FEATURE_NAMES)
-        with open(self.TRACE, 'w') as stream:
-            print >> stream, names
+        HEADER = ['latency_power_product'] + self.TARGET_NAMES
+        names = 'real_' + '\t real_'.join(HEADER) + '\t predicted_' + '\t predicted'.join(HEADER)
+        names += '\t' + '\t'.join(self.FEATURE_NAMES)
         self.estimators = learner.build_estimators(dataset, self.TARGET_COUNT, accuracy)
     def distance(self, graph, source, destination):
         distance = graph.node[source]['weight']
@@ -155,15 +155,14 @@ class Performer(object):
             predicted_sample[i] = (self.estimators[i].predict(
                     predicted_sample[self.TARGET_COUNT:])).tolist()[0]
         predicted_raw_sample = actuator.scaler.inverse_transform(asarray(predicted_sample)).tolist()
-        return predicted_raw_sample
-    def evaluate_quality(self, raw_sample):
-        return - raw_sample[0] * raw_sample[1]
+        predicted_raw_targets = predicted_raw_sample[:self.TARGET_COUNT]
+        return predicted_raw_targets
+    def evaluate_quality(self, raw_targets):
+        return - raw_targets[0] * raw_targets[1]
     def build_dataset(self, instance_count):
-        with open(learner.DATASET, 'w') as stream:
-            print >> stream, '#', '\t'.join(self.TARGET_NAMES), '\t','\t'.join(self.FEATURE_NAMES)
         for round in range(instance_count):
-            graph = self.generate_random_graph(uniform(self.EDGE_COUNT_MIN, self.EDGE_COUNT_MAX))
-            actuator.add_data(graph, self.TARGET_TOKENS, learner.DATASET)
+            graph = self.generate_random_graph(uniform(70, 200))
+            actuator.add_data(graph, self.TARGET_TOKENS, learner.DATASET, initial = True)
 performer = Performer()
 # graph = performer.generate_random_graph(70)
 # print(graph.degree().values())
@@ -193,13 +192,13 @@ class Actuator(object):
     SIMULATOR = 'booksim2/src/booksim'
     SIMULATION_LOG = 'simulation.log'
     scaler = StandardScaler()
-    def load_data(self, dataset):
-        raw_dataset = loadtxt(dataset)
+    def load_data(self, dataset, columns):
+        raw_dataset = loadtxt(dataset, usecols = columns)
         self.scaler.fit(raw_dataset)
         scaled_dataset = self.scaler.transform(raw_dataset)
         split_dataset = map(squeeze, hsplit(scaled_dataset,[1,2]))
         return split_dataset
-    def add_data(self, graph, target_tokens, dataset):
+    def add_data(self, graph, target_tokens, dataset, initial = False):
         with open(self.TOPOLOGY, 'w+') as stream:
             for source in graph:
                 destinations = []
@@ -209,21 +208,19 @@ class Actuator(object):
                 destinations_string = ' '.join(map(str, destinations))
                 print >> stream, 'router', source, 'node', source, destinations_string
         with open(self.SIMULATION_LOG, 'w+') as stream:
-            with open('error.log', 'w+') as error_log:
-                check_call([self.SIMULATOR, self.CONFIGURATION], stdout = stream, stderr = error_log)
-
+            check_call([self.SIMULATOR, self.CONFIGURATION], stdout = stream)
         raw_features = performer.extract_features(graph)
         real_raw_targets = sensor.extract_targets(self.SIMULATION_LOG, target_tokens)
         real_raw_sample = real_raw_targets + raw_features
         real_quality = performer.evaluate_quality(real_raw_sample)
         data_instance = []
-        if dataset == learner.DATASET:
-            data_instance = real_raw_sample
-        if dataset == performer.TRACE:
-            predicted_raw_sample = performer.estimate_sample(raw_features)
-            predicted_quality = performer.evaluate_quality(predicted_raw_sample)
-            data_instance = ([- real_quality] + real_raw_targets +
-                             [- predicted_quality] + predicted_raw_sample)
+        predicted_raw_targets = real_raw_targets
+        predicted_quality = real_quality
+        if initial == False:
+            predicted_raw_targets = performer.estimate_sample(raw_features)
+            predicted_quality = performer.evaluate_quality(predicted_raw_targets)
+        data_instance = (real_raw_sample + [- real_quality] +
+                         [- predicted_quality] + predicted_raw_targets)
         print(data_instance)
         with open(dataset, 'a') as stream:
             print >> stream, '\t'.join(map(str, data_instance))
@@ -263,7 +260,7 @@ actuator = Actuator()
 
 class Optimization(SearchProblem):
     def actions(self, state):
-        actuator.add_data(state, performer.TARGET_TOKENS, performer.TRACE)
+        actuator.add_data(state, performer.TARGET_TOKENS, learner.DATASET)
         successors = []
         for cluster in combinations(nodes(state),2):
             successor = state.copy()
@@ -280,23 +277,23 @@ class Optimization(SearchProblem):
         return action
     def value(self, state):
         raw_features = performer.extract_features(state)
-        predicted_raw_sample = performer.estimate_sample(raw_features)
-        predicted_quality = performer.evaluate_quality(predicted_raw_sample)
+        predicted_raw_targets = performer.estimate_sample(raw_features)
+        predicted_quality = performer.evaluate_quality(predicted_raw_targets)
         return predicted_quality
     def generate_random_state(self):
-        state = performer.generate_random_graph(uniform(performer.EDGE_COUNT_MIN
-                                                        , performer.EDGE_COUNT_MAX))
+        performer.update_estimators(learner.DATASET, 4)
+        state = performer.generate_random_graph(uniform(80, 100))
         return state
 optimization = Optimization()
 
 def optimize():
     RESULT = 'result.log'
-    performer.update_estimators(learner.DATASET, 5)
-    result = hill_climbing_random_restarts(optimization, 1, 1000)
+    result = hill_climbing_random_restarts(optimization, 2)
     with open(RESULT, 'a') as stream:
         pprint('################################################################', stream)
-        pprint('time' + strftime('-%Y-%m-%d-%H-%m-%S'))
+        pprint('time' + strftime('-%Y-%m-%d-%H-%m-%S'), stream)
         pprint(['quality', -result.value], stream)
         pprint(to_dict_of_lists(result.state), stream)
-performer.build_dataset(1000)
-# optimize()
+
+# performer.build_dataset(1000)
+optimize()
