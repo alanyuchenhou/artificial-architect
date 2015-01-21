@@ -113,8 +113,12 @@ class Performer(object):
     FEATURE_NAMES = ['edge_count', 'path_length', 'diameter', 'radius', 'degree_norm']
     FEATURE_COUNT = len(FEATURE_NAMES)
     SAMPLE_SIZE = TARGET_COUNT + FEATURE_COUNT
-    BENCHMARKS = ['traffic_bodytrack.txt']
-    TRAFFIC = sum(loadtxt(BENCHMARKS[0]))
+    BENCHMARKS = ['traffic_bodytrack.txt', 'traffic_canneal.txt', 'traffic_dedup.txt',
+                  'traffic_fluidanimate.txt', 'traffic_freqmine.txt', 'traffic_swaption.txt',
+                  'traffic_vips.txt']
+    BENCHMARK = BENCHMARKS[0]
+    print BENCHMARK
+    TRAFFIC = sum(loadtxt(BENCHMARK))
     print TRAFFIC
     TRAFFIC *= (sum(TRAFFIC)*10)
     print TRAFFIC
