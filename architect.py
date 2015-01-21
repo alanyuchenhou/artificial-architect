@@ -4,6 +4,7 @@ from os import devnull
 from pprint import pprint
 from copy import copy
 from cProfile import run
+from fileinput import input
 from itertools import combinations
 from functools import reduce
 from operator import mul
@@ -43,16 +44,19 @@ from numpy import arange
 from numpy import asarray
 from numpy import zeros
 from numpy import average
+from numpy import repeat
 from numpy import dot
 from numpy.linalg import norm
 from numpy import fill_diagonal
 from numpy import vstack
 from numpy import hstack
+from numpy import tile
 from numpy import hsplit
 from numpy import vsplit
 from numpy import logspace
 from numpy import linspace
 from numpy import squeeze
+from numpy import histogram
 from sklearn import datasets
 from sklearn.svm import SVR
 from sklearn.svm import SVC
@@ -97,7 +101,6 @@ class Learner(object):
 learner = Learner()
 
 class Performer(object):
-    TRAFFIC_BODYTRACK = 'traffic_bodytrack.txt'
     DIMENSION = 2
     RADIX = 8
     NODE_COUNT = RADIX ** DIMENSION
@@ -110,10 +113,23 @@ class Performer(object):
     FEATURE_NAMES = ['edge_count', 'path_length', 'diameter', 'radius', 'degree_norm']
     FEATURE_COUNT = len(FEATURE_NAMES)
     SAMPLE_SIZE = TARGET_COUNT + FEATURE_COUNT
+    BENCHMARKS = ['traffic_bodytrack.txt']
+    TRAFFIC = sum(loadtxt(BENCHMARKS[0]))
+    print TRAFFIC
+    TRAFFIC *= (sum(TRAFFIC)*10)
+    print TRAFFIC
+    AVERAGED_TRAFFIC = tile(TRAFFIC, (NODE_COUNT,1))
     estimators = []
+    def update_traffic(self):
+        node_string = 'traffic = hotspot({{' + ','.join(map(str, range(performer.NODE_COUNT))) + '},'
+        traffic_string = '{'+ ','.join(map(str, self.TRAFFIC.tolist())) + '}});'
+        for line in input(actuator.CONFIGURATION, inplace = True):
+            if line.startswith('traffic ='):
+                print line.replace(line, node_string + traffic_string)
+            else:
+                print line.replace(line, line),
     def extract_features(self, graph):
-        raw_features = [number_of_edges(graph), average_shortest_path_length(graph, 'weight'),
-                    diameter(graph), radius(graph), norm(graph.degree().values())**2]
+        raw_features = [number_of_edges(graph), self.weighted_average_shortest_path_length(graph, 'weight'), diameter(graph), radius(graph), norm(graph.degree().values())**2]
         return raw_features
     def update_estimators(self, dataset, accuracy):
         HEADER = ['latency_power_product'] + self.TARGET_NAMES
@@ -146,8 +162,7 @@ class Performer(object):
         for source in raw_path_lengths:
             for destination in raw_path_lengths[source]:
                 path_lengths[source][destination] = raw_path_lengths[source][destination]
-        traffic = loadtxt(self.TRAFFIC_BODYTRACK)
-        return average(path_lengths, weights = traffic)
+        return average(path_lengths, weights = self.AVERAGED_TRAFFIC)
     def estimate_sample(self, raw_features):
         raw_sample = asarray(range(self.TARGET_COUNT) + raw_features)
         predicted_sample = actuator.scaler.transform(raw_sample)
@@ -158,20 +173,12 @@ class Performer(object):
         predicted_raw_targets = predicted_raw_sample[:self.TARGET_COUNT]
         return predicted_raw_targets
     def evaluate_quality(self, raw_targets):
-        return - raw_targets[0] * raw_targets[1]
+        return -(raw_targets[0] * raw_targets[1])
     def build_dataset(self, instance_count):
         for round in range(instance_count):
             graph = self.generate_random_graph(uniform(70, 200))
             actuator.add_data(graph, self.TARGET_TOKENS, learner.DATASET, initial = True)
 performer = Performer()
-# graph = performer.generate_random_graph(70)
-# print(graph.degree().values())
-# pprint(norm(graph.degree().values())**2)
-# pprint(to_dict_of_lists(graph))
-# from matplotlib.pyplot import show
-# draw(graph, get_node_attributes(graph, 'position'), hold = True)
-# draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
-# show()
 
 class Sensor(object):
     def extract_targets(self, simulation_log, target_tokens):
@@ -208,11 +215,12 @@ class Actuator(object):
                 destinations_string = ' '.join(map(str, destinations))
                 print >> stream, 'router', source, 'node', source, destinations_string
         with open(self.SIMULATION_LOG, 'w+') as stream:
-            check_call([self.SIMULATOR, self.CONFIGURATION], stdout = stream)
+            with open('error.log', 'w+') as error_log:
+                check_call([self.SIMULATOR, self.CONFIGURATION], stdout = stream, stderr = error_log)
         raw_features = performer.extract_features(graph)
         real_raw_targets = sensor.extract_targets(self.SIMULATION_LOG, target_tokens)
         real_raw_sample = real_raw_targets + raw_features
-        real_quality = performer.evaluate_quality(real_raw_sample)
+        real_quality = performer.evaluate_quality(real_raw_targets)
         data_instance = []
         predicted_raw_targets = real_raw_targets
         predicted_quality = real_quality
@@ -288,12 +296,24 @@ optimization = Optimization()
 
 def optimize():
     RESULT = 'result.log'
-    result = hill_climbing_random_restarts(optimization, 2)
-    with open(RESULT, 'a') as stream:
-        pprint('################################################################', stream)
-        pprint('time' + strftime('-%Y-%m-%d-%H-%m-%S'), stream)
-        pprint(['quality', -result.value], stream)
-        pprint(to_dict_of_lists(result.state), stream)
+    for i in range(10):
+        result = hill_climbing_random_restarts(optimization, 1, 1000)
+        with open(RESULT, 'a') as stream:
+            pprint('################################################################', stream)
+            pprint('time' + strftime('-%Y-%m-%d-%H-%m-%S'), stream)
+            print >> stream, to_dict_of_dicts(result.state)
+            edge_weights=[]
+            for edge in result.state.edges(data = True):
+                edge_weights.append(edge[2]['weight'] - performer.NODE_WEIGHT)
+            pprint(histogram(edge_weights, bins = max(edge_weights))[0], stream)
+            actuator.add_data(result.state, performer.TARGET_TOKENS, RESULT)
 
-# performer.build_dataset(1000)
+# graph = performer.generate_random_graph(99)
+# from matplotlib.pyplot import show
+# draw(graph, get_node_attributes(graph, 'position'), hold = True)
+# draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
+# show()
+
+# performer.update_traffic()
+# performer.build_dataset(100)
 optimize()
