@@ -120,7 +120,8 @@ class Performer(object):
     TRAFFIC /= (sum(TRAFFIC)*.001)
     print TRAFFIC
     DATASET = 'dataset.' + benchmark + '.dat'
-    RESULT = 'result.' + benchmark + '.log'
+    STATS = 'stats.' + benchmark + '.dat'
+    DESIGN = 'design.' + benchmark + '.log'
     estimators = []
     def update_traffic(self):
         node_string = 'traffic = hotspot({{' + ','.join(map(str, range(performer.NODE_COUNT))) + '},'
@@ -143,8 +144,10 @@ class Performer(object):
         names += '\t predicted_' + '\t predicted_'.join(HEADER) + '\n'
         with open(performer.DATASET, 'w+') as stream:
             print >> stream, names
-        with open(performer.RESULT, 'w+') as steam:
-            pass
+        with open(performer.STATS, 'w+') as stream:
+            print >> stream, 'time \t', 'edge_weight_distribution \t', names
+        with open(performer.DESIGN, 'w+') as stream:
+            print >> stream, 'time \t' + 'design'
     def update_estimators(self, dataset, accuracy):
         self.estimators = learner.build_estimators(dataset, self.TARGET_COUNT, accuracy)
     def distance(self, graph, source, destination):
@@ -312,15 +315,16 @@ def run():
     performer.build_dataset(100)
     for i in range(10):
         result = hill_climbing_random_restarts(optimization, 1)
-        with open(performer.RESULT, 'a') as stream:
-            pprint('################################################################', stream)
-            pprint('time' + strftime('-%Y-%m-%d-%H-%m-%S'), stream)
-            print >> stream, to_dict_of_dicts(result.state)
-            edge_weights=[]
-            for edge in result.state.edges(data = True):
-                edge_weights.append(edge[2]['weight'] - performer.NODE_WEIGHT)
-            pprint(histogram(edge_weights, bins = max(edge_weights))[0], stream)
-            actuator.add_data(result.state, performer.TARGET_TOKENS, performer.RESULT)
+        time_stamp = strftime('%Y-%m-%d-%H-%m-%S') + '\t'
+        with open(performer.DESIGN, 'a') as stream:
+            print >> stream, time_stamp, to_dict_of_dicts(result.state)
+        edge_weights=[]
+        for edge in result.state.edges(data = True):
+            edge_weights.append(edge[2]['weight'] - performer.NODE_WEIGHT)
+        edge_weight_histogram = histogram(edge_weights, bins = max(edge_weights))[0].tolist()
+        with open(performer.STATS, 'a') as stream:
+            print >> stream, time_stamp, edge_weight_histogram, '\t',
+        actuator.add_data(result.state, performer.TARGET_TOKENS, performer.STATS)
 
 # graph = performer.generate_random_graph(99)
 # from matplotlib.pyplot import show
