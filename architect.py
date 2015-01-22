@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+from shutil import copyfile
 from os import devnull
 from pprint import pprint
 from copy import copy
@@ -35,6 +35,7 @@ from networkx import draw_networkx_edge_labels
 from networkx import gnm_random_graph
 from networkx import to_numpy_matrix
 from networkx import to_dict_of_lists
+from networkx import to_dict_of_dicts
 from networkx import to_edgelist
 from networkx import shortest_path_length
 from networkx import average_shortest_path_length
@@ -82,7 +83,6 @@ class Critic(object):
             print 'best_score=', estimator.best_score_
 
 class Learner(object):
-    DATASET = 'dataset.dat'
     def build_estimators(self, dataset, target_count, accuracy):
         data = actuator.load_data(dataset, range(performer.SAMPLE_SIZE))
         c_range = accuracy
@@ -101,6 +101,8 @@ class Learner(object):
 learner = Learner()
 
 class Performer(object):
+    DATASET = 'dataset.dat'
+    RESULT = 'result.log'
     DIMENSION = 2
     RADIX = 8
     NODE_COUNT = RADIX ** DIMENSION
@@ -113,16 +115,12 @@ class Performer(object):
     FEATURE_NAMES = ['edge_count', 'path_length', 'diameter', 'radius', 'degree_norm']
     FEATURE_COUNT = len(FEATURE_NAMES)
     SAMPLE_SIZE = TARGET_COUNT + FEATURE_COUNT
-    BENCHMARKS = ['traffic_bodytrack.txt', 'traffic_canneal.txt', 'traffic_dedup.txt',
-                  'traffic_fluidanimate.txt', 'traffic_freqmine.txt', 'traffic_swaption.txt',
-                  'traffic_vips.txt']
-    BENCHMARK = BENCHMARKS[0]
-    print BENCHMARK
-    TRAFFIC = sum(loadtxt(BENCHMARK))
+    BENCHMARKS = ['bodytrack', 'canneal', 'dedup', 'fluidanimate', 'freqmine', 'swaption', 'vips']
+    benchmark = BENCHMARKS[1]
+    print benchmark
+    TRAFFIC = sum(loadtxt('traffic_' + benchmark + '.txt'))
+    TRAFFIC /= (sum(TRAFFIC)*.001)
     print TRAFFIC
-    TRAFFIC *= (sum(TRAFFIC)*10)
-    print TRAFFIC
-    AVERAGED_TRAFFIC = tile(TRAFFIC, (NODE_COUNT,1))
     estimators = []
     def update_traffic(self):
         node_string = 'traffic = hotspot({{' + ','.join(map(str, range(performer.NODE_COUNT))) + '},'
@@ -133,12 +131,21 @@ class Performer(object):
             else:
                 print line.replace(line, line),
     def extract_features(self, graph):
-        raw_features = [number_of_edges(graph), self.weighted_average_shortest_path_length(graph, 'weight'), diameter(graph), radius(graph), norm(graph.degree().values())**2]
+        raw_features = [number_of_edges(graph),
+                        self.weighted_average_shortest_path_length(graph, 'weight'),
+                        diameter(graph), radius(graph), norm(graph.degree().values())**2]
         return raw_features
-    def update_estimators(self, dataset, accuracy):
-        HEADER = ['latency_power_product'] + self.TARGET_NAMES
-        names = 'real_' + '\t real_'.join(HEADER) + '\t predicted_' + '\t predicted'.join(HEADER)
+    def initialize_data(self):
+        HEADER = self.TARGET_NAMES
+        names = 'real_' + '\t real_'.join(HEADER)
         names += '\t' + '\t'.join(self.FEATURE_NAMES)
+        names += '\t real_latency_power_product \t predicted_latency_power_product'
+        names += '\t predicted_' + '\t predicted_'.join(HEADER) + '\n'
+        with open(performer.DATASET, 'w') as stream:
+            print >> stream, names
+        with open(performer.RESULT, 'w') as steam:
+            pass
+    def update_estimators(self, dataset, accuracy):
         self.estimators = learner.build_estimators(dataset, self.TARGET_COUNT, accuracy)
     def distance(self, graph, source, destination):
         distance = graph.node[source]['weight']
@@ -166,7 +173,8 @@ class Performer(object):
         for source in raw_path_lengths:
             for destination in raw_path_lengths[source]:
                 path_lengths[source][destination] = raw_path_lengths[source][destination]
-        return average(path_lengths, weights = self.AVERAGED_TRAFFIC)
+        averaged_traffic = tile(self.TRAFFIC, (self.NODE_COUNT,1))
+        return average(path_lengths, weights = averaged_traffic)
     def estimate_sample(self, raw_features):
         raw_sample = asarray(range(self.TARGET_COUNT) + raw_features)
         predicted_sample = actuator.scaler.transform(raw_sample)
@@ -181,7 +189,7 @@ class Performer(object):
     def build_dataset(self, instance_count):
         for round in range(instance_count):
             graph = self.generate_random_graph(uniform(70, 200))
-            actuator.add_data(graph, self.TARGET_TOKENS, learner.DATASET, initial = True)
+            actuator.add_data(graph, self.TARGET_TOKENS, performer.DATASET, initial = True)
 performer = Performer()
 
 class Sensor(object):
@@ -204,7 +212,7 @@ class Actuator(object):
     SIMULATION_LOG = 'simulation.log'
     scaler = StandardScaler()
     def load_data(self, dataset, columns):
-        raw_dataset = loadtxt(dataset, usecols = columns)
+        raw_dataset = loadtxt(dataset, usecols = columns, skiprows = 1)
         self.scaler.fit(raw_dataset)
         scaled_dataset = self.scaler.transform(raw_dataset)
         split_dataset = map(squeeze, hsplit(scaled_dataset,[1,2]))
@@ -237,7 +245,7 @@ class Actuator(object):
         with open(dataset, 'a') as stream:
             print >> stream, '\t'.join(map(str, data_instance))
 actuator = Actuator()
-# actuator.add_data(graph, performer.TARGET_TOKENS, learner.DATASET)
+# actuator.add_data(graph, performer.TARGET_TOKENS, performer.DATASET)
 
     # def simulate(self, args, SIMULATION_LOG):
     #     parameters = [1,8,1,64,11,64,64,5,0,0,4,7,1.8,'s',6,1,1,'r']
@@ -272,7 +280,7 @@ actuator = Actuator()
 
 class Optimization(SearchProblem):
     def actions(self, state):
-        actuator.add_data(state, performer.TARGET_TOKENS, learner.DATASET)
+        actuator.add_data(state, performer.TARGET_TOKENS, performer.DATASET)
         successors = []
         for cluster in combinations(nodes(state),2):
             successor = state.copy()
@@ -293,16 +301,18 @@ class Optimization(SearchProblem):
         predicted_quality = performer.evaluate_quality(predicted_raw_targets)
         return predicted_quality
     def generate_random_state(self):
-        performer.update_estimators(learner.DATASET, 4)
+        performer.update_estimators(performer.DATASET, 4)
         state = performer.generate_random_graph(uniform(80, 100))
         return state
 optimization = Optimization()
 
-def optimize():
-    RESULT = 'result.log'
+def run():
+    performer.initialize_data()
+    performer.update_traffic()
+    performer.build_dataset(100)
     for i in range(10):
-        result = hill_climbing_random_restarts(optimization, 1, 1000)
-        with open(RESULT, 'a') as stream:
+        result = hill_climbing_random_restarts(optimization, 1)
+        with open(performer.RESULT, 'a') as stream:
             pprint('################################################################', stream)
             pprint('time' + strftime('-%Y-%m-%d-%H-%m-%S'), stream)
             print >> stream, to_dict_of_dicts(result.state)
@@ -310,7 +320,9 @@ def optimize():
             for edge in result.state.edges(data = True):
                 edge_weights.append(edge[2]['weight'] - performer.NODE_WEIGHT)
             pprint(histogram(edge_weights, bins = max(edge_weights))[0], stream)
-            actuator.add_data(result.state, performer.TARGET_TOKENS, RESULT)
+            actuator.add_data(result.state, performer.TARGET_TOKENS, performer.RESULT)
+    for data in [performer.DATASET, performer.RESULT]:
+        copyfile(data, data.replace('.', '.' + performer.benchmark + '.'))
 
 # graph = performer.generate_random_graph(99)
 # from matplotlib.pyplot import show
@@ -318,6 +330,4 @@ def optimize():
 # draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
 # show()
 
-# performer.update_traffic()
-# performer.build_dataset(100)
-optimize()
+run()
