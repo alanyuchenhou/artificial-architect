@@ -101,8 +101,6 @@ class Learner(object):
 learner = Learner()
 
 class Performer(object):
-    DATASET = 'dataset.dat'
-    RESULT = 'result.log'
     DIMENSION = 2
     RADIX = 8
     NODE_COUNT = RADIX ** DIMENSION
@@ -121,6 +119,8 @@ class Performer(object):
     TRAFFIC = sum(loadtxt('traffic_' + benchmark + '.txt'))
     TRAFFIC /= (sum(TRAFFIC)*.001)
     print TRAFFIC
+    DATASET = 'dataset.' + benchmark + '.dat'
+    RESULT = 'result.' + benchmark + '.log'
     estimators = []
     def update_traffic(self):
         node_string = 'traffic = hotspot({{' + ','.join(map(str, range(performer.NODE_COUNT))) + '},'
@@ -141,9 +141,9 @@ class Performer(object):
         names += '\t' + '\t'.join(self.FEATURE_NAMES)
         names += '\t real_latency_power_product \t predicted_latency_power_product'
         names += '\t predicted_' + '\t predicted_'.join(HEADER) + '\n'
-        with open(performer.DATASET, 'w') as stream:
+        with open(performer.DATASET, 'w+') as stream:
             print >> stream, names
-        with open(performer.RESULT, 'w') as steam:
+        with open(performer.RESULT, 'w+') as steam:
             pass
     def update_estimators(self, dataset, accuracy):
         self.estimators = learner.build_estimators(dataset, self.TARGET_COUNT, accuracy)
@@ -321,8 +321,6 @@ def run():
                 edge_weights.append(edge[2]['weight'] - performer.NODE_WEIGHT)
             pprint(histogram(edge_weights, bins = max(edge_weights))[0], stream)
             actuator.add_data(result.state, performer.TARGET_TOKENS, performer.RESULT)
-    for data in [performer.DATASET, performer.RESULT]:
-        copyfile(data, data.replace('.', '.' + performer.benchmark + '.'))
 
 # graph = performer.generate_random_graph(99)
 # from matplotlib.pyplot import show
