@@ -71,7 +71,7 @@ All the data trace are discontinuous because of random restart. Every time the s
 As the previous model cannot accurately predict energy consumption, we decided to start the process of rebuilding the model with better features and better learners. But before I did that, I realized as we would rebuild a model anyway, I could also build a model for a different metric, instead for new features. Therefore, I let it build a model for the metric of latency. And it turned out that this model performed very well in an optimization process. A short optimization process is shown in Figure \ref{fig:latency}. The progress of the optimization is very good in the first 60 steps, although it enters a plateau-like region afterward. This trial has not solved the old problem of energy optimization, but at least suggests the whole framework we have now is operational.
 \subsection{Data standardization}
 To improve estimation accuracy, I applied standardization to the data. The standardization removes the mean of each feature and scale the feature by dividing by its standard deviation. After standardization, every feature has zero mean and unit variance.
-\subsection{Regression SVM latency model accuracy evaluation}
+\subsection{Regression SVM latency estimation accuracy evaluation}
 With a prospect of more rapid training and more accurate prediction, I upgraded the SVM from a ranking SVM to a regression SVM \cite{chang2011libsvm}. The objective in this step is to find a good SVM model: a good kernel function with corresponding hyperparameters. The score(metric) of a SVM model is the coefficient of determination of the prediction values and target values. In other words, the higher the score is, the more accurate the SVM estimation is. The basic approach is to performe grid search on hyperparameters for common kernels. 10-fold cross validation is used to split the datasets into training sets and test sets. The search spaces for the hyperparameters are geometric series with base 10, covering wide ranges of parapemeter spaces surrounding the optimum values (the polynomial degree is an exception, which is a drawn from a linear series). Table \ref{tab:latency} shows the kernels considered, the best parameters for each of them and corresponding best scores (1 is the maximum possible score). The target value in the dataset is latency. Linear, polynomial and rbf kernels all have good estimation accuracies, while sigmoid does not.
 \begin{table}[htb]
   \centering
@@ -82,10 +82,10 @@ With a prospect of more rapid training and more accurate prediction, I upgraded 
     rbf & {'C': 10.0, 'gamma': 0.1} & 0.998510004994 & radial basis function kernel has the best performance \\ \hline
     sigmoid & {'C': 0.0001} & -0.117680908896 & sigmoid has bad performance \\ \hline
   \end{tabularx}
-  \caption{Regression SVM latency model evaluation results for 4 kernels}
+  \caption{Regression SVM latency estimation results for 4 kernels}
   \label{tab:latency}
 \end{table}
-\subsection{Regression SVM power model accuracy evaluation}
+\subsection{Regression SVM power estimation accuracy evaluation}
 In this step, I evaluate the estimation accuracy of target variable power for different kernels. The approach is the same as that in previous step. Table \ref{tab:power} shows the evaluation results for different kernels. The results are similar to the previous step.
 \begin{table}[htb]
   \centering
@@ -96,25 +96,69 @@ In this step, I evaluate the estimation accuracy of target variable power for di
     rbf & {'C': 100.0, 'gamma': 0.1} & 0.996458564078 & radial basis function kernel has the best performance \\ \hline
     sigmoid & {'C': 0.01} & -0.10638804199 & sigmoid has bad performance \\ \hline
   \end{tabularx}
-  \caption{Regression SVM power model evaluation results for 4 kernels}
+  \caption{Regression SVM power estimation results for 4 kernels}
   \label{tab:power}
 \end{table}
 \subsection{Network optimization for power latency product}
 This is the first try of network optimization for low power latency product. The goal is to assess the current performance of SVM regression in real action. The network quality is defined as the product of power and latency. 2 SVMs independently estimate 2 metric targets of a network: power and latency. One of them fits to the data for the target power, ignoring latency; the other fits to the data for the target latency, ignoring power. Based on previous model accuracy evaluations, both of the SVM adopt rbf kernels with hyperparameters optimized by grid search. Figure \ref{fig:latency-power} shows the optimization process.
 \begin{figure}[htb]
-    \centering
-    \begin{subfigure}
-      {\includegraphics[width=\textwidth]{trace.png}}
-    \end{subfigure}
-    \rule{\linewidth}{1pt}
-    \caption{An optimization process with quality defined as latency-power product}
-    \label{fig:latency-power}
+  \centering
+      {\includegraphics[width=\textwidth]{trace-2015-01-15.png}}
+      \rule{\linewidth}{1pt}
+      \caption{An optimization process with quality defined as latency-power product}
+      \label{fig:latency-power}
 \end{figure}
-The search trace recorded in the optimization process suggests the previous upgrades to learning were successful. This optimization process consists of 4 complete(and 1 ongoing) iterations of hill climbing search. Every iteration begins with a random-restart, exhibited by the sharp turning points in the plots. During the optimization, the variance of latency is much smaller than the variance of power, leading to the similarity of trends between power and latency power product.
+In the optimization, the variance of latency is much smaller than the variance of power, leading to the similarity of trends between power and latency power product. The optimization is good till about 200 steps, when the power prediction starts to deviate from the real value. This phenomenon suggests there are missing features that have a great effect on power for networks with small number of links. So what I need to do in the next step is to find out this missing feature.
+\subsection{Feature expansion: router leakage power and degree norm}
+In this step, I added a new feature to facilitate power estimation accuracy improvement. We know that router leakage power is a substantial part in total power consumption, which is usually estimated as a polynomial of degree 2 of the port count. \cite{sanchez2010analysis, chan2005nocee} So the total leackage power is the sum of these polynomials. As the terms with degree 1 in these polinomials sum up as the total port count(which is exactly twice the total link count in the existing feature set), these terms with degree 1 do not need to be taken into account again. What needs to be taken into account is thus the sum of the terms with degree 2, which is the sum of squares of port counts. If we use the standard terminology degree(of a node in a graph) to refer to the port count of the router. The degrees of all the routers form a degree vector, and the square of the norm of the degree vector is the feature to charaterize the sum of squres of port counts. We use the term degree norm to refer to this feature. Figure \ref{fig:degree_norm} shows the improved optimization. The power estimation is much better than it was before, but still has space for improvement.
+\begin{figure}[htb]
+  \centering
+      {\includegraphics[width=\textwidth]{trace-2015-01-17.png}}
+      \rule{\linewidth}{1pt}
+      \caption{Improved optimization process after new feature degree norm}
+      \label{fig:degree_norm}
+\end{figure}
+\subsection{Aggregative learning and simulated annealing}
+Simulated annealing replaces hill climbing as the new search methods. Also aggregative learning is activated(it was turned off by mistake). The new optimization is shown in Figure \ref{fig:simulated_annealing}.
+\begin{figure}[htb]
+  \centering
+      {\includegraphics[width=\textwidth]{trace-2015-01-18.png}}
+      \rule{\linewidth}{1pt}
+      \caption{Improved optimization process with simulated annealing and aggregative learning}
+      \label{fig:simulated_annealing}
+\end{figure}
+\subsection{Performance for different traffic patterns}
+Figure \ref{fig:bodytrack}
+\begin{figure}[htb]
+  \centering
+      {\includegraphics[width=\textwidth]{trace-bodytrack.png}}
+      \rule{\linewidth}{1pt}
+      \caption{Bodytrack}
+      \label{fig:bodytrack}
+\end{figure}
+%% \begin{figure}[htb]
+%%   \centering
+%%       {\includegraphics[width=\textwidth]{trace-canneal.png}}
+%%       \rule{\linewidth}{1pt}
+%%       \caption{Canneal}
+%%       \label{fig:canneal}
+%% \end{figure}
+
+
+\subsection{Comparison with mesh topology}
+The estimation accuracy has become very stable and accurate now and the optimization results looks very good (figure attached). I compared the final design quality and metrics with those of mesh and the machine optimized network is superior in almost every aspect I compared (power is the only exception). Table \ref{tab:record} shows the comparison results.
+\begin{table}[htb]
+  \centering
+  \begin{tabularx}{\textwidth}{|X|l|l|l|l|} \hline
+    topology & latency power product & latency & power & link count \\ \hline
+    mesh & 825.56782242.567 & 33.1003 & 24.9414 & 112 \\ \hline
+    optimization result & 717.90935004 & 27.7092 & 25.9087 & 92 \\ \hline
+  \end{tabularx}
+  \caption{The comparison between mesh topology and the topology optimization result}
+  \label{tab:record}
+\end{table}
 
 \section{Next steps}
-\subsection{More expressive design features}
-This is an important way to improve the design quality in the long run. I will record the states of the searches and their features, qualities predicted by the objective function and also assessed by the simulator. Then I need to identify the search process where model predictions deviate from simulation assessment, and also characterize the common bad features of these designs which the learning has not taken into account yet, using domain knowledge specific for network on chip design. The I can add these new features that reflect the drawbacks of these networks into the learning problem. In this way, the objective function will relate these features to design qualities through learning and prevent future searches from getting into these bad states.
 \subsection{New learners: Boosted Regression Trees and LambdaMART}
 http://statsr.wikispaces.com/Boosted+Regression+Trees\\
 http://sourceforge.net/p/lemur/wiki/RankLib
@@ -231,6 +275,14 @@ The features used to characterize the network are shown in Table \ref{tab:featur
   \caption{The network design features}
   \label{tab:features}
 \end{table}
+Feature selection is a very important aspect in this project. Small feature sets might not be sufficient for optimization and we have considered 3 different approaches to expand a feature set:
+\begin{enumerate}
+  \item Manual expansion. This is the only approach we have implemented, and also the only process demanding human iterference in the whole framework. We start with any feature set, (e.g. average shortest path length and total number of links). and perform the optimization. After that, we can manually examine the optimization result and identify the drawbacks of the results which the learning has not taken into account yet, using our knowledge in network on chip design. At last we add new features that reflect the drawbacks of these networks into the learning problem. In this way, the learning algorithm will relate these features to design metrics and prevent future searches from getting into these bad states. This process can be repeated until the results meet optimiztion requirement.
+  \item Auto expansion. The above manual expansion approach is an iterative process just like an local search. The hard part is the features to be added into the feature set are unknown to the program. Even if we incorperate a huge feature pool, it is still hard to find a cheap way to select the right feature. Exhuastive examinination of every feature would too expensive, if it requires another complete optimization process.
+  \item Brutal expansion. This approach can be described as throwing every possible feature we can think of into the feature set and let the learning algorithm figure out which ones are useful. This seems to be a great way to exploit the power of machine learning, but it has 2 obvious drawbacks too: every feature is calculated by a piece of code, which needs human to write; and very large feature sets often have negative effect on learning outcome.
+
+\end{enumerate}
+This process has not been automated but automation is possible.
 \subsection{Network design quality}
 There are many metrics that can be used to assess the quality of a network design, for example, latency, throughput, energy efficiency. In this project, only the energy efficiency of the final network is considered, which is evaluated by the network simulator.
 %% \subsection{Metrics}
