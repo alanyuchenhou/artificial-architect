@@ -118,15 +118,6 @@ In this step, I added a new feature to facilitate power estimation accuracy impr
       \caption{Improved optimization process after new feature degree norm}
       \label{fig:degree_norm}
 \end{figure}
-\subsection{Aggregative learning and simulated annealing}
-Simulated annealing replaces hill climbing as the new search methods. Also aggregative learning is activated(it was turned off by mistake). The new optimization is shown in Figure \ref{fig:simulated_annealing}.
-\begin{figure}[htb]
-  \centering
-      {\includegraphics[width=\textwidth]{trace-2015-01-18.png}}
-      \rule{\linewidth}{1pt}
-      \caption{Improved optimization process with simulated annealing and aggregative learning}
-      \label{fig:simulated_annealing}
-\end{figure}
 \subsection{Performance for different traffic patterns}
 Figure \ref{fig:bodytrack}
 \begin{figure}[htb]
@@ -146,17 +137,7 @@ Figure \ref{fig:bodytrack}
 
 
 \subsection{Comparison with mesh topology}
-The estimation accuracy has become very stable and accurate now and the optimization results looks very good (figure attached). I compared the final design quality and metrics with those of mesh and the machine optimized network is superior in almost every aspect I compared (power is the only exception). Table \ref{tab:record} shows the comparison results.
-\begin{table}[htb]
-  \centering
-  \begin{tabularx}{\textwidth}{|X|l|l|l|l|} \hline
-    topology & latency power product & latency & power & link count \\ \hline
-    mesh & 825.56782242.567 & 33.1003 & 24.9414 & 112 \\ \hline
-    optimization result & 717.90935004 & 27.7092 & 25.9087 & 92 \\ \hline
-  \end{tabularx}
-  \caption{The comparison between mesh topology and the topology optimization result}
-  \label{tab:record}
-\end{table}
+The estimation accuracy has become very stable and accurate now and the optimization results looks very good (figure attached). I compared the final design quality and metrics with those of mesh and the machine optimized network is superior in almost every aspect I compared (power is the only exception). 
 
 \section{Next steps}
 \subsection{New learners: Boosted Regression Trees and LambdaMART}
@@ -176,6 +157,8 @@ One of the assumption of this project is that the quality of an arbitrary design
 Big neighborhood provide more opportunities for uphill moves, but they are usually way too slow because there are too many neighbors to examine. For example, even if the radius of the neighborhood increases to only 3, the climbing speed can drop to 2 uphill moves per hour. In future work, I will examine the possibility of combining large neighborhood with first-choice hill climbing, as first-choice hill climbing can avoid exhaustive examination of the entire neighborhood and its performance penalty. However, this approach with a very large neighborhood has a drawback. The hill climbing might have very big actions so that it becomes more like a series of jumps in the search space, instead of climbing a hill step by step, as in a typical local search.
 \subsection{Small neighborhood and simulated annealing}
 Simulated annealing can also address the issue of getting stuck at local optima, which I should also try in the future. As the workload of simulated annealing is even higher than a normal hill climbing search,only small neighborhood should be consider in this scenario. The drawback of this approach is not clear yet.
+\subsection{less critical}
+genetic and beam search. more random restarts. more diverse initial states. turn off simulator.
 \subsection{Adaptive searching}
 Instead of fix the hill climbing methods, the agent might adapt its searching algorithm to the specific situation it is in. For example, at the beginning of the search, it can use first-choice hill climbing with large neighborhood to rapidly approach a good neighborhood; then it can switch to simulated annealing with small neighborhood to conduct more thorough search around that neighborhood.
 \subsection{Neighbor filtering}
