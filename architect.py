@@ -61,6 +61,7 @@ from numpy import logspace
 from numpy import linspace
 from numpy import squeeze
 from numpy import histogram
+from pandas import read_csv
 from sklearn import datasets
 from sklearn.svm import SVR
 from sklearn.svm import SVC
@@ -119,6 +120,8 @@ learner = Learner()
 
 class Performer(object):
     benchmarks = ['bodytrack', 'canneal', 'dedup', 'fluidanimate', 'freqmine', 'swaption', 'vips']
+    configuration_mesh_template = 'booksim2/src/examples/mesh88_lat'
+    simulation_log_mesh = 'simulation_mesh.log'
     database = {}
     for benchmark in benchmarks:
         entry = {}
@@ -127,11 +130,12 @@ class Performer(object):
         entry['traffic'] = traffic
         entry['topology'] = 'booksim2/src/examples/anynet/anynet_file_' + benchmark
         entry['configuration'] = 'booksim2/src/examples/anynet/anynet_config_' + benchmark
+        entry['configuration_mesh'] = 'booksim2/src/examples/mesh88_lat_' + benchmark
         entry['simulation_log'] = 'simulation_' + benchmark +'.log'
         entry['dataset'] = 'dataset_' + benchmark + '.dat'
         entry['stats'] = 'stats_' + benchmark + '.dat'
         entry['design'] = 'design_' + benchmark + '.log'
-        entry['trace'] = 'trace_' + benchmark + '.png'
+        entry['trace'] = 'zulu/trace_' + benchmark + '.png'
         database[benchmark] = entry
     # pprint(database)
     benchmark = benchmarks[0]
@@ -154,6 +158,19 @@ class Performer(object):
                         self.weighted_length(performer.database[benchmark]['traffic'], graph, 'weight'),
                         diameter(graph), radius(graph), norm(graph.degree().values())**2]
         return raw_features
+    def initialize_mesh(self, benchmark):
+        self.benchmark = benchmark
+        print 'benchmark =', self.benchmark
+        node_string = 'hotspot({{' + ','.join(map(str, range(performer.NODE_COUNT))) + '},'
+        traffic_string = '{'+ ','.join(map(str, self.database[benchmark]['traffic'].tolist())) + '}})'
+        copyfile(self.configuration_mesh_template, self.database[benchmark]['configuration_mesh'])
+        for line in input(self.database[benchmark]['configuration_mesh'], inplace = True):
+            if line.startswith('traffic ='):
+                print line.replace(line, 'traffic = ' + node_string + traffic_string + ';')
+            elif line.startswith('injection_rate ='):
+                print line.replace(line, line),
+            else:
+                print line.replace(line, line),
     def initialize(self, benchmark, instance_count):
         self.benchmark = benchmark
         print 'benchmark =', self.benchmark
@@ -247,6 +264,17 @@ class Actuator(object):
         scaled_dataset = self.scaler.transform(raw_dataset)
         split_dataset = map(squeeze, hsplit(scaled_dataset,[1,2]))
         return split_dataset
+    def add_data_mesh(self, benchmark, target_tokens, initial = False):
+        with open(performer.simulation_log_mesh, 'w+') as stream:
+            with open('error.log', 'w+') as error_log:
+                check_call([self.SIMULATOR, performer.database[benchmark]['configuration_mesh']],
+                           stdout = stream, stderr = error_log)
+        real_raw_targets = sensor.extract_targets(
+            performer.simulation_log_mesh, target_tokens)
+        real_quality = performer.evaluate_quality(real_raw_targets)
+        data_instance = []
+        data_instance = (real_raw_targets + [- real_quality])
+        print '\t'.join(map(str, data_instance))
     def add_data(self, benchmark, graph, target_tokens, dataset, initial = False):
         with open(performer.database[benchmark]['topology'], 'w+') as stream:
             for source in graph:
@@ -321,6 +349,8 @@ def run(benchmark, restarts, iterations):
         actuator.add_data(benchmark, final.state, performer.TARGET_TOKENS,
                           performer.database[benchmark]['stats'])
 def analyze(benchmark):
+    data = read_csv(performer.database[benchmark]['stats'], sep = '\t')
+    print data.sort(columns = ' real_latency_power_product ')
     raw_data = genfromtxt(performer.database[benchmark]['dataset'], names = True)
     data = delete(raw_data, range(100))
     figure(figsize = (14, 10))
@@ -346,9 +376,9 @@ def analyze(benchmark):
 # show()
 
 def design(benchmark):
-    performer.initialize(benchmark, 10)
-    run(benchmark, 5, 5)
+    # performer.initialize(benchmark, 100)
+    # run(benchmark, 20, 200)
     analyze(benchmark)
 if __name__ == '__main__':
-    pool = Pool(4)
+    pool = Pool(8)
     pool.map(design, performer.benchmarks)
