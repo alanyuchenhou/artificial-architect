@@ -31,6 +31,7 @@
 *.png
 *.pdf
 *.zip
+*.aux
 *.txt
 *.jpg
 *.log

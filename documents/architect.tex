@@ -35,7 +35,7 @@ In this basic test is a single hill climbing search. It started from a randomly 
 %% \begin{figure}[htb]
 %%     \centering
 %%     \begin{subfigure}
-%%       {\includegraphics[width=\textwidth]{zulu/trace-2014-12-18.png}}
+%%       {\includegraphics[width=\textwidth]{documents/trace-2014-12-18.png}}
 %%     \end{subfigure}
 %%     \rule{\linewidth}{1pt}
 %%     \caption{The basic search process. The score is calculated with the model learned from a previously obtained data set.}
@@ -51,7 +51,7 @@ The test after the first refinement confirmed the problem exposed in the previou
 %% \begin{figure}[htb]
 %%     \centering
 %%     \begin{subfigure}
-%%       {\includegraphics[width=\textwidth]{zulu/trace-2014-12-20.png}}
+%%       {\includegraphics[width=\textwidth]{documents/trace-2014-12-20.png}}
 %%     \end{subfigure}
 %%     \rule{\linewidth}{1pt}
 %%     \caption{The 2nd search process. The new energy consumption is obtained from the simulator's feedback.}
@@ -62,7 +62,7 @@ All the data trace are discontinuous because of random restart. Every time the s
 %% \begin{figure}[htb]
 %%     \centering
 %%     \begin{subfigure}
-%%       {\includegraphics[width=\textwidth]{zulu/trace-2015-01-09.png}}
+%%       {\includegraphics[width=\textwidth]{documents/trace-2015-01-09.png}}
 %%     \end{subfigure}
 %%     \rule{\linewidth}{1pt}
 %%     \caption{The optimization process with latency as the metric during a single hill climbing}
@@ -103,7 +103,7 @@ In this step, I evaluate the estimation accuracy of target variable power for di
 This is the first try of network optimization for low power latency product. The goal is to assess the current performance of SVM regression in real action. The network quality is defined as the product of power and latency. 2 SVMs independently estimate 2 metric targets of a network: power and latency. One of them fits to the data for the target power, ignoring latency; the other fits to the data for the target latency, ignoring power. Based on previous model accuracy evaluations, both of the SVM adopt rbf kernels with hyperparameters optimized by grid search. Figure \ref{fig:latency-power} shows the optimization process.
 %% \begin{figure}[htb]
 %%   \centering
-%%       {\includegraphics[width=\textwidth]{zulu/trace-2015-01-15.png}}
+%%       {\includegraphics[width=\textwidth]{documents/trace-2015-01-15.png}}
 %%       \rule{\linewidth}{1pt}
 %%       \caption{An optimization process with quality defined as latency-power product}
 %%       \label{fig:latency-power}
@@ -113,7 +113,7 @@ In the optimization, the variance of latency is much smaller than the variance o
 In this step, I added a new feature to facilitate power estimation accuracy improvement. We know that router leakage power is a substantial part in total power consumption, which is usually estimated as a polynomial of degree 2 of the port count. \cite{sanchez2010analysis, chan2005nocee} So the total leackage power is the sum of these polynomials. As the terms with degree 1 in these polinomials sum up as the total port count(which is exactly twice the total link count in the existing feature set), these terms with degree 1 do not need to be taken into account again. What needs to be taken into account is thus the sum of the terms with degree 2, which is the sum of squares of port counts. If we use the standard terminology degree(of a node in a graph) to refer to the port count of the router. The degrees of all the routers form a degree vector, and the square of the norm of the degree vector is the feature to charaterize the sum of squres of port counts. We use the term degree norm to refer to this feature. Figure \ref{fig:degree_norm} shows the improved optimization. The power estimation is much better than it was before, but still has space for improvement.
 %% \begin{figure}[htb]
 %%   \centering
-%%       {\includegraphics[width=\textwidth]{zulu/trace-2015-01-17.png}}
+%%       {\includegraphics[width=\textwidth]{documents/trace-2015-01-17.png}}
 %%       \rule{\linewidth}{1pt}
 %%       \caption{Improved optimization process after new feature degree norm}
 %%       \label{fig:degree_norm}
@@ -123,24 +123,24 @@ Figure \ref{fig:bodytrack}
 
 \begin{figure}[htb]
   \centering
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{zulu/trace_bodytrack.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{zulu/trace_canneal.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{zulu/trace_dedup.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{zulu/trace_fluidanimate.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{zulu/trace_freqmine.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{zulu/trace_swaption.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/trace_bodytrack.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/trace_canneal.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/trace_dedup.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/trace_fluidanimate.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/trace_freqmine.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/trace_swaption.png}} \end{subfigure}
   \rule{\linewidth}{1pt}
   \caption{Trace}
   \label{fig:trace}
 \end{figure}
 \begin{figure}[htb]
   \centering
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{zulu/result_bodytrack.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{zulu/result_canneal.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{zulu/result_dedup.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{zulu/result_fluidanimate.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{zulu/result_freqmine.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{zulu/result_swaption.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/result_bodytrack.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/result_canneal.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/result_dedup.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/result_fluidanimate.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/result_freqmine.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/result_swaption.png}} \end{subfigure}
   \rule{\linewidth}{1pt}
   \caption{Result}
   \label{fig:result}
@@ -225,10 +225,10 @@ where A[i,j] specifies whether there is a link from node[i] to nod[j]: 1 stands 
 \begin{figure}[htb]
   \centering
   \begin{subfigure}
-    {\includegraphics[width=0.4\textwidth]{zulu/graph3.png}}
+    {\includegraphics[width=0.4\textwidth]{documents/graph3.png}}
   \end{subfigure}
   \begin{subfigure}
-    {\includegraphics[width=0.4\textwidth]{zulu/graph4.png}}
+    {\includegraphics[width=0.4\textwidth]{documents/graph4.png}}
   \end{subfigure}
   \rule{1\linewidth}{1pt}
   \caption{2 examples of 64 node networks with different link counts}

@@ -121,12 +121,12 @@ class Performer(object):
         entry['dataset'] = 'dataset_' + benchmark + '.dat'
         entry['stats'] = 'stats_' + benchmark + '.dat'
         entry['design'] = 'design_' + benchmark + '.log'
-        entry['trace'] = 'zulu/trace_' + benchmark + '.png'
-        entry['result'] = 'zulu/result_' + benchmark + '.png'
+        entry['trace'] = 'documents/trace_' + benchmark + '.png'
+        entry['result'] = 'documents/result_' + benchmark + '.png'
         database[benchmark] = entry
     # pprint(database)
     benchmark = benchmarks[0]
-    DOCUMENT = 'architect'
+    DOCUMENT = 'documents/architect'
     DIMENSION = 2
     RADIX = 8
     NODE_COUNT = RADIX ** DIMENSION
