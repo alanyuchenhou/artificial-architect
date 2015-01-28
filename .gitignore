@@ -36,4 +36,5 @@
 *.log
 *.dat
 booksim2
-documents
+documents/*
+!documents/architect.tex
