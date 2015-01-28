@@ -325,7 +325,7 @@ optimization = Optimization()
 def draw_graph(graph):
     draw(graph, get_node_attributes(graph, 'position'), hold = True)
     draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
-    show()
+    savefig(temp.png)
     return
 
 def design(benchmark):
@@ -347,16 +347,24 @@ def design(benchmark):
         actuator.add_data(benchmark, final.state, performer.TARGET_TOKENS, performer.database[benchmark]['stats'])
     return
 
-def analyze(benchmark):
-    data = read_csv(performer.database[benchmark]['stats'], sep = '\t', skipinitialspace = True)
-    # axes = data.loc[:,['real_latency_power_product ']].plot(kind = 'hist', alpha = .5)
-    # axes.set_xlabel('latency_power_product')
-    # axes.get_figure().savefig(performer.database[benchmark]['result'])
+def visualize(benchmark, data_file):
+    data = read_csv(performer.database[benchmark][data_file], sep = '\t', skipinitialspace = True)
+    figure_file = None
+    axes = None
+    if data_file == 'stats':
+        axes = data.loc[2:,['real_latency_power_product ']].plot(kind = 'hist')
+        axes.set_xlabel('latency_power_product')
+        figure_file = 'result'
+    elif data_file == 'dataset':
+        axes = data.loc[100:,['real_latency_power_product ', 'predicted_latency_power_product']].plot()
+        axes.set_xlabel('step')
+        figure_file = 'trace'
+    axes.get_figure().savefig(performer.database[benchmark][figure_file])
+    return
 
-    data = read_csv(performer.database[benchmark]['dataset'], sep = '\t', skipinitialspace = True)
-    axes = data.loc[100:,['real_latency_power_product ', 'predicted_latency_power_product']].plot(alpha = .5)
-    axes.set_xlabel('step')
-    axes.get_figure().savefig(performer.database[benchmark]['trace'])
+def analyze(benchmark):
+    for data_file in ['stats', 'dataset']:
+        visualize(benchmark, data_file)
     return
 
 if __name__ == '__main__':
