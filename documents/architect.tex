@@ -1,5 +1,6 @@
 \documentclass[12pt]{article}
 \renewcommand*{\familydefault}{\sfdefault}
+\usepackage{lmodern}
 \usepackage{listings}
 \usepackage[usenames,dvipsnames,svgnames,table]{xcolor}
 %% \usepackage{color}
@@ -25,398 +26,411 @@
 \author{Yuchen Hou}
 \maketitle
 
-\begin{abstract}
-  This project introduces machine learning enhanced on-chip network architecture design automation. It demonstrates a basic framework for the task. The framework is clarified with a concrete example of network topology optimization. A few experiments are conducted and summarize. The current experimental results have not yet provided evidences to prove this framework is indeed successful. The deficiency of this project and future work to address these issues are also discussed.
-\end{abstract}
+%% \begin{abstract}
+%%   This project introduces machine learning enhanced on-chip network architecture design automation. It demonstrates a basic framework for the task. The framework is clarified with a concrete example of network topology optimization. A few experiments are conducted and summarize. The current experimental results have not yet provided evidences to prove this framework is indeed successful. The deficiency of this project and future work to address these issues are also discussed.
+%% \end{abstract}
 
 \section{Finished steps}
-\subsection{Basic hill climbing}
-In this basic test is a single hill climbing search. It started from a randomly generated design and reached a local optimum. The neighborhood radius in this test is 2. The design features and scores were logged in every search step, which is shown in Figure \ref{fig:trace}. This result suggests the searching is operational - under the guidance of the objective function, the search finds designs with better and better design scores.
-%% \begin{figure}[htb]
-%%     \centering
-%%     \begin{subfigure}
-%%       {\includegraphics[width=\textwidth]{documents/trace-2014-12-18.png}}
-%%     \end{subfigure}
-%%     \rule{\linewidth}{1pt}
-%%     \caption{The basic search process. The score is calculated with the model learned from a previously obtained data set.}
-%%     \label{fig:trace}
-%% \end{figure}
-However, There are 2 obvious weaknesses in this experiment:
-\begin{enumerate}
-  \item The design score predicted by the objective function is not a reliable justification of the design quality. Only the energy consumption predicted by the simulator is. If the objective function prediction deviates from the simulator prediction too much, the search can never find a optimum design.
-  \item The degree has abnormal trend after 60 steps. Instead of increasing, it started to decrease, and even all the way to a very low level of 2. This phenomenon is against our experience for network design, and is a good sign that the model previously learned does not perform well.
-\end{enumerate}
-\subsection{Hill climbing with random restart, learning and feedback}
-The test after the first refinement confirmed the problem exposed in the previous test: the model does not perform well, as indicated by the feedback from the simulator. The neighborhood radius is still 2 in this test. Figure \ref{fig:refined} shows the search history in the 2nd experiment, after random restart, learning and feedback are applied to the search. This test is still in progress, but the current result is already quite dramatic.
-%% \begin{figure}[htb]
-%%     \centering
-%%     \begin{subfigure}
-%%       {\includegraphics[width=\textwidth]{documents/trace-2014-12-20.png}}
-%%     \end{subfigure}
-%%     \rule{\linewidth}{1pt}
-%%     \caption{The 2nd search process. The new energy consumption is obtained from the simulator's feedback.}
-%%     \label{fig:refined}
-%% \end{figure}
-All the data trace are discontinuous because of random restart. Every time the search reaches a local optimum, the search restarts and all the features, score and energy jump to new levels. It is not clear whether learning during the search process has effectively improved the search performance; the subsequent search process may provide more insight to this question. The fluctuation of the energy does decrease gradually, but this is not a strong evidence that the this results from more accurate prediction and hence the learning process.  Within every search cycle, the features and scores still behave as in the previous test. However, the trend of the energy is far from what I expected. In the ideal situation, the energy should certainly decrease monotonically, as that is the goal of the search. Practically speaking, the prediction given by the model(the score) will have some deviation from the real value(energy), so the energy is supposed to decrease with fluctuation. One can argue that the energy does 'decrease with fluctuation' in every search cycle according to the data provided in this test, but this argument is weak because the magnitude of the energy fluctuation is even larger than the overall energy decrements. If the assumption that the simulation is accurate holds, the explanation should be the network energy is very sensitive to minor changes in the network topology. Further more, I can infer that minor changes in the topology can radically change some features not captured in the current learning process. It is also possible that those design features are not closely related to network topology. This analysis need more knowledge about network design.
-%% \subsection{Optimization for latency}
-%% \begin{figure}[htb]
-%%     \centering
-%%     \begin{subfigure}
-%%       {\includegraphics[width=\textwidth]{documents/trace-2015-01-09.png}}
-%%     \end{subfigure}
-%%     \rule{\linewidth}{1pt}
-%%     \caption{The optimization process with latency as the metric during a single hill climbing}
-%%     \label{fig:latency}
-%% \end{figure}
-As the previous model cannot accurately predict energy consumption, we decided to start the process of rebuilding the model with better features and better learners. But before I did that, I realized as we would rebuild a model anyway, I could also build a model for a different metric, instead for new features. Therefore, I let it build a model for the metric of latency. And it turned out that this model performed very well in an optimization process. A short optimization process is shown in Figure \ref{fig:latency}. The progress of the optimization is very good in the first 60 steps, although it enters a plateau-like region afterward. This trial has not solved the old problem of energy optimization, but at least suggests the whole framework we have now is operational.
-\subsection{Data standardization}
-To improve estimation accuracy, I applied standardization to the data. The standardization removes the mean of each feature and scale the feature by dividing by its standard deviation. After standardization, every feature has zero mean and unit variance.
-\subsection{Regression SVM latency estimation accuracy evaluation}
-With a prospect of more rapid training and more accurate prediction, I upgraded the SVM from a ranking SVM to a regression SVM \cite{chang2011libsvm}. The objective in this step is to find a good SVM model: a good kernel function with corresponding hyperparameters. The score(metric) of a SVM model is the coefficient of determination of the prediction values and target values. In other words, the higher the score is, the more accurate the SVM estimation is. The basic approach is to performe grid search on hyperparameters for common kernels. 10-fold cross validation is used to split the datasets into training sets and test sets. The search spaces for the hyperparameters are geometric series with base 10, covering wide ranges of parapemeter spaces surrounding the optimum values (the polynomial degree is an exception, which is a drawn from a linear series). Table \ref{tab:latency} shows the kernels considered, the best parameters for each of them and corresponding best scores (1 is the maximum possible score). The target value in the dataset is latency. Linear, polynomial and rbf kernels all have good estimation accuracies, while sigmoid does not.
-\begin{table}[htb]
-  \centering
-  \begin{tabularx}{\textwidth}{|l|l|l|X|} \hline
-    kernel & best parameters & best score & comment \\ \hline
-    linear & {'C': 1.0} & 0.997911262124 & linear kernel shows unexpected good performance \\ \hline
-    poly & {'C': 10.0, 'degree': 1} & 0.997904758134 & polynomial kernel performs well; the optimum degree is 1, it differs from linear kernel only by a constant variable in the estimation value \\ \hline
-    rbf & {'C': 10.0, 'gamma': 0.1} & 0.998510004994 & radial basis function kernel has the best performance \\ \hline
-    sigmoid & {'C': 0.0001} & -0.117680908896 & sigmoid has bad performance \\ \hline
-  \end{tabularx}
-  \caption{Regression SVM latency estimation results for 4 kernels}
-  \label{tab:latency}
-\end{table}
-\subsection{Regression SVM power estimation accuracy evaluation}
-In this step, I evaluate the estimation accuracy of target variable power for different kernels. The approach is the same as that in previous step. Table \ref{tab:power} shows the evaluation results for different kernels. The results are similar to the previous step.
-\begin{table}[htb]
-  \centering
-  \begin{tabularx}{\textwidth}{|l|l|l|X|} \hline
-    kernel & best parameters & best score & comment \\ \hline
-    linear & {'C': 100.0} & 0.966341472123 & linear kernel performs well \\ \hline
-    poly & {'C': 10.0, 'degree': 1} & 0.96634104226 & polynomial kernel performs well; the optimum degree is 1 \\ \hline
-    rbf & {'C': 100.0, 'gamma': 0.1} & 0.996458564078 & radial basis function kernel has the best performance \\ \hline
-    sigmoid & {'C': 0.01} & -0.10638804199 & sigmoid has bad performance \\ \hline
-  \end{tabularx}
-  \caption{Regression SVM power estimation results for 4 kernels}
-  \label{tab:power}
-\end{table}
-\subsection{Network optimization for power latency product}
-This is the first try of network optimization for low power latency product. The goal is to assess the current performance of SVM regression in real action. The network quality is defined as the product of power and latency. 2 SVMs independently estimate 2 metric targets of a network: power and latency. One of them fits to the data for the target power, ignoring latency; the other fits to the data for the target latency, ignoring power. Based on previous model accuracy evaluations, both of the SVM adopt rbf kernels with hyperparameters optimized by grid search. Figure \ref{fig:latency-power} shows the optimization process.
-%% \begin{figure}[htb]
-%%   \centering
-%%       {\includegraphics[width=\textwidth]{documents/trace-2015-01-15.png}}
-%%       \rule{\linewidth}{1pt}
-%%       \caption{An optimization process with quality defined as latency-power product}
-%%       \label{fig:latency-power}
-%% \end{figure}
-In the optimization, the variance of latency is much smaller than the variance of power, leading to the similarity of trends between power and latency power product. The optimization is good till about 200 steps, when the power prediction starts to deviate from the real value. This phenomenon suggests there are missing features that have a great effect on power for networks with small number of links. So what I need to do in the next step is to find out this missing feature.
-\subsection{Feature expansion: router leakage power and degree norm}
-In this step, I added a new feature to facilitate power estimation accuracy improvement. We know that router leakage power is a substantial part in total power consumption, which is usually estimated as a polynomial of degree 2 of the port count. \cite{sanchez2010analysis, chan2005nocee} So the total leackage power is the sum of these polynomials. As the terms with degree 1 in these polinomials sum up as the total port count(which is exactly twice the total link count in the existing feature set), these terms with degree 1 do not need to be taken into account again. What needs to be taken into account is thus the sum of the terms with degree 2, which is the sum of squares of port counts. If we use the standard terminology degree(of a node in a graph) to refer to the port count of the router. The degrees of all the routers form a degree vector, and the square of the norm of the degree vector is the feature to charaterize the sum of squres of port counts. We use the term degree norm to refer to this feature. Figure \ref{fig:degree_norm} shows the improved optimization. The power estimation is much better than it was before, but still has space for improvement.
-%% \begin{figure}[htb]
-%%   \centering
-%%       {\includegraphics[width=\textwidth]{documents/trace-2015-01-17.png}}
-%%       \rule{\linewidth}{1pt}
-%%       \caption{Improved optimization process after new feature degree norm}
-%%       \label{fig:degree_norm}
-%% \end{figure}
 \subsection{Performance for different traffic patterns}
-Figure \ref{fig:bodytrack}
-
 \begin{figure}[htb]
   \centering
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/trace_bodytrack.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/trace_canneal.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/trace_dedup.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/trace_fluidanimate.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/trace_freqmine.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/trace_swaption.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_bodytrack.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_canneal.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_dedup.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_fluidanimate.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_freqmine.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_swaption.png}} \end{subfigure}
   \rule{\linewidth}{1pt}
   \caption{Trace}
   \label{fig:trace}
 \end{figure}
 \begin{figure}[htb]
   \centering
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/result_bodytrack.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/result_canneal.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/result_dedup.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/result_fluidanimate.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/result_freqmine.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{documents/result_swaption.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_bodytrack.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_canneal.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_dedup.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_fluidanimate.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_freqmine.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_swaption.png}} \end{subfigure}
   \rule{\linewidth}{1pt}
   \caption{Result}
   \label{fig:result}
 \end{figure}
 
-\subsection{Comparison with mesh topology}
-The estimation accuracy has become very stable and accurate now and the optimization results looks very good (figure attached). I compared the final design quality and metrics with those of mesh and the machine optimized network is superior in almost every aspect I compared (power is the only exception). 
-
-\section{Next steps}
-\subsection{New learners: Boosted Regression Trees and LambdaMART}
-http://statsr.wikispaces.com/Boosted+Regression+Trees\\
-http://sourceforge.net/p/lemur/wiki/RankLib
-\subsection{Bayesian optimization and Guassian processes}
-Gaussian process and continuous to discrete optimization \cite{brochu2010tutorial}.
-\subsection{Study a Bayesian optimization for hardware design}
-Computer architecture design optimization with Bayesian optimization \cite{demasiusing}.
-\subsection{New learning algorithm}
-An learning algorithm that fits online learning is needed, because learning process is getting longer as training data-set increases. By 2014-12-19, the training dataset has exceeded 1.5K training instances; every new learning takes more than 1 day. Current learning frequency is once every search cycle, but it is still too expensive. Also I will find a ML library to replace the current standalone learning program to avoid system calls and file read / write operations, to speedup the learning and searching.
-\subsection{Learning algorithm tuning}
-More suitable kernels and parameters may help the SVM used in this project to fit the learning task better. However, systematic and effective tuning is itself a search problem - I am essentially searching for a optimum SVM setup. I will need more knowledge to carry out this search.
-\subsection{Model oriented learning}
-One of the assumption of this project is that the quality of an arbitrary design can be accurately predicted by a model built by a learning algorithm. It is not clear if this assumption depends on any conditions. It is possible that the tool has to learn a much more complex model, because its purpose is to serve as an analytical replacement of the simulator(which is very complex) in situations where accuracy requirement is low. This model will be less accurate than the the simulator, but also has to be much less expensive to use. This work depends on a good knowledge on both the simulator design and learning technique.
-\subsection{Large neighborhood and first-choice hill climbing}
-Big neighborhood provide more opportunities for uphill moves, but they are usually way too slow because there are too many neighbors to examine. For example, even if the radius of the neighborhood increases to only 3, the climbing speed can drop to 2 uphill moves per hour. In future work, I will examine the possibility of combining large neighborhood with first-choice hill climbing, as first-choice hill climbing can avoid exhaustive examination of the entire neighborhood and its performance penalty. However, this approach with a very large neighborhood has a drawback. The hill climbing might have very big actions so that it becomes more like a series of jumps in the search space, instead of climbing a hill step by step, as in a typical local search.
-\subsection{Small neighborhood and simulated annealing}
-Simulated annealing can also address the issue of getting stuck at local optima, which I should also try in the future. As the workload of simulated annealing is even higher than a normal hill climbing search,only small neighborhood should be consider in this scenario. The drawback of this approach is not clear yet.
-\subsection{less critical}
-genetic and beam search. more random restarts. more diverse initial states. turn off simulator.
-\subsection{Adaptive searching}
-Instead of fix the hill climbing methods, the agent might adapt its searching algorithm to the specific situation it is in. For example, at the beginning of the search, it can use first-choice hill climbing with large neighborhood to rapidly approach a good neighborhood; then it can switch to simulated annealing with small neighborhood to conduct more thorough search around that neighborhood.
-\subsection{Neighbor filtering}
-I will consider to find high performance filter to discard the neighbors with bad qualities before they are examined by the objective function to reduce the workload of the examination. This filter must be less expensive than the objective function.
-\subsection{Program profiling}
-Currently, program run time is not a the primary focus, but the prolonged search process does have an negative effect to the project. Profiling is worth considering in the future.
-
-\section{Introduction}
-\subsection{Motivation and challenges}
-The problem this project focuses on is on-chip network design automation. On-chip network has become increasingly prevalent as the communication system in modern chip designs. A key in a good on-chip network is usually a good trade-off between many conflicting design features. An architect might be able to tell how good every feature of the design is, but even the most experienced architects can have only a vague idea about the best trade-off point. Along with the exponential growth of design complexity, design quality analysis and design feature trade-off become more difficult. Therefore, performing a large number simulations has become the primary method for many design optimization tasks. Although we have sophisticated simulators \cite{amoretti2014modeling} \cite{jiang2013detailed} to accurately assess design qualities, design processes still heavily depend on intellectual engagement of human. Also, simulation based design processes are time consuming because simulations are getting more expensive. Computer aided design tools we have now mostly deal with only low level design optimization, but not high level design optimization. This leads to a well known issue in chip design - productivity gap: design complexity keeps increasing rapidly, but designer productivity is lagged behind.
-\subsection{Solution approach}
-The solution proposed in this project is to construct a simple computer aided design tool for on chip network optimization. More specifically, a network design problem is formulated as a optimization problem and build a high level design tool with searching \cite{ganguly2011scalable} and learning ability to automatically optimize a network design, given design constraints and performance measure. The goal is that this tool can optimize a network autonomously, or at least significantly reduce the workload of human designers in a design process and therefore increase designer productivity.
-\subsection{Results}
-The current empirical results have not provide evidence suggesting that the tool is already effective enough for network optimization task. The fundamental problem is that the objective function learned so far cannot accurately predicts network design qualities, resulting in unsuccessful local search for optimum designs.
-
-\section{Problem setup}
-\subsection{Assumptions}
-There are 3 assumptions on which this project is built:
-\begin{enumerate}
-\item On-chip network design can be successfully formulated as an optimization problem.
-\item The quality of an arbitrary network design can be predicted by a model built by a learning algorithm.
-\item The network simulator can accurately evaluate an arbitrary network design.
-\end{enumerate}
-\subsection{Task definition and formulation}
-The typical network architecture design task for a human architect is an iterative process of the following steps:
-\begin{enumerate}
-\item{The architect analyzes the current design, and consider a few similar new designs}
-\item{The architect assesses the qualities of new designs using his knowledge}
-\item{The architect chooses a design with high quality and test it with a simulator}
-\item{The architect examines the simulation report and improves his knowledge}
-\item{The architect repeats the process until a good design is found}
-\end{enumerate}
-Compared to a human architect, an artificial architect(a computer program) probably fits this iterative process better with its sheer amount of computing resources a human cannot match. In order to construct this program, we can formulate the task into an optimization process, as described below:
-\begin{description}
-  \item[Network design problem] Optimization problem;
-  \item[Fundamental design approach] Local search;
-  \item[Knowledge] Objective function in local search, also the hypothesis function in learning(see below);
-  \item[Knowledge improvement] Learning;
-  \item[Knowledge based design quality analysis] Objective function based design quality estimation;
-  \item[Simulation results] Training instances;
-\end{description}
-The essence of this tool is that it can learn an objective function that can wisely balance the trade-off between all those features and tells us what combination of them leads to the best quality design. It takes time to learn the objective functions because it demands experience acquired from real design examples.
-\subsection{Network design specifications}
-The network design can be specified by its topology adjacency matrix A, for example:
-\begin{align*}
-  \begin{pmatrix}
-    1 & 0 & \cdots & 0 \\
-    0 & 1 & \cdots & 1 \\
-    \vdots & \vdots & \ddots & \vdots \\
-    0 & 1 & \cdots & 1 \\
-  \end{pmatrix} \\
-\end{align*}
-where A[i,j] specifies whether there is a link from node[i] to nod[j]: 1 stands for there is a direct link, and 0 indicates there is no direct link. The matrix is symmetric, as the network is an undirected graph. Figure \ref{fig:networks} shows some visualization examples for networks.
+\subsection{Link cost distribution}
+Figure \ref{fig:links} shows the link weight distributions.
 \begin{figure}[htb]
   \centering
-  \begin{subfigure}
-    {\includegraphics[width=0.4\textwidth]{documents/graph3.png}}
-  \end{subfigure}
-  \begin{subfigure}
-    {\includegraphics[width=0.4\textwidth]{documents/graph4.png}}
-  \end{subfigure}
-  \rule{1\linewidth}{1pt}
-  \caption{2 examples of 64 node networks with different link counts}
-  \label{fig:networks}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_bodytrack.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_canneal.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_dedup.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_fluidanimate.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_freqmine.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_swaption.png}} \end{subfigure}
+  \rule{\linewidth}{1pt}
+  \caption{Link weight distribution for different networks}
+  \label{fig:links}
 \end{figure}
-There are many other aspects in a network design beside network topology, which have not been taken into account yet and will be considered in future work.
+%% \subsection{Basic hill climbing}
+%% In this basic test is a single hill climbing search. It started from a randomly generated design and reached a local optimum. The neighborhood radius in this test is 2. The design features and scores were logged in every search step, which is shown in Figure \ref{fig:trace}. This result suggests the searching is operational - under the guidance of the objective function, the search finds designs with better and better design scores.
+%% \begin{figure}[htb]
+%%     \centering
+%%     \begin{subfigure}
+%%       {\includegraphics[width=\textwidth]{trace-2014-12-18.png}}
+%%     \end{subfigure}
+%%     \rule{\linewidth}{1pt}
+%%     \caption{The basic search process. The score is calculated with the model learned from a previously obtained data set.}
+%%     \label{fig:trace}
+%% \end{figure}
+%% However, There are 2 obvious weaknesses in this experiment:
+%% \begin{enumerate}
+%%   \item The design score predicted by the objective function is not a reliable justification of the design quality. Only the energy consumption predicted by the simulator is. If the objective function prediction deviates from the simulator prediction too much, the search can never find a optimum design.
+%%   \item The degree has abnormal trend after 60 steps. Instead of increasing, it started to decrease, and even all the way to a very low level of 2. This phenomenon is against our experience for network design, and is a good sign that the model previously learned does not perform well.
+%% \end{enumerate}
+%% \subsection{Hill climbing with random restart, learning and feedback}
+%% The test after the first refinement confirmed the problem exposed in the previous test: the model does not perform well, as indicated by the feedback from the simulator. The neighborhood radius is still 2 in this test. Figure \ref{fig:refined} shows the search history in the 2nd experiment, after random restart, learning and feedback are applied to the search. This test is still in progress, but the current result is already quite dramatic.
+%% \begin{figure}[htb]
+%%     \centering
+%%     \begin{subfigure}
+%%       {\includegraphics[width=\textwidth]{trace-2014-12-20.png}}
+%%     \end{subfigure}
+%%     \rule{\linewidth}{1pt}
+%%     \caption{The 2nd search process. The new energy consumption is obtained from the simulator's feedback.}
+%%     \label{fig:refined}
+%% \end{figure}
+%% All the data trace are discontinuous because of random restart. Every time the search reaches a local optimum, the search restarts and all the features, score and energy jump to new levels. It is not clear whether learning during the search process has effectively improved the search performance; the subsequent search process may provide more insight to this question. The fluctuation of the energy does decrease gradually, but this is not a strong evidence that the this results from more accurate prediction and hence the learning process.  Within every search cycle, the features and scores still behave as in the previous test. However, the trend of the energy is far from what I expected. In the ideal situation, the energy should certainly decrease monotonically, as that is the goal of the search. Practically speaking, the prediction given by the model(the score) will have some deviation from the real value(energy), so the energy is supposed to decrease with fluctuation. One can argue that the energy does 'decrease with fluctuation' in every search cycle according to the data provided in this test, but this argument is weak because the magnitude of the energy fluctuation is even larger than the overall energy decrements. If the assumption that the simulation is accurate holds, the explanation should be the network energy is very sensitive to minor changes in the network topology. Further more, I can infer that minor changes in the topology can radically change some features not captured in the current learning process. It is also possible that those design features are not closely related to network topology. This analysis need more knowledge about network design.
+%% \subsection{Optimization for latency}
+%% \begin{figure}[htb]
+%%     \centering
+%%     \begin{subfigure}
+%%       {\includegraphics[width=\textwidth]{trace-2015-01-09.png}}
+%%     \end{subfigure}
+%%     \rule{\linewidth}{1pt}
+%%     \caption{The optimization process with latency as the metric during a single hill climbing}
+%%     \label{fig:latency}
+%% \end{figure}
+%% As the previous model cannot accurately predict energy consumption, we decided to start the process of rebuilding the model with better features and better learners. But before I did that, I realized as we would rebuild a model anyway, I could also build a model for a different metric, instead for new features. Therefore, I let it build a model for the metric of latency. And it turned out that this model performed very well in an optimization process. A short optimization process is shown in Figure \ref{fig:latency}. The progress of the optimization is very good in the first 60 steps, although it enters a plateau-like region afterward. This trial has not solved the old problem of energy opt%% imization, but at least suggests the whole framework we have now is operational.
+%% \subsection{Data standardization}
+%% To improve estimation accuracy, I applied standardization to the data. The standardization removes the mean of each feature and scale the feature by dividing by its standard deviation. After standardization, every feature has zero mean and unit variance.
+%% \subsection{Regression SVM latency estimation accuracy evaluation}
+%% With a prospect of more rapid training and more accurate prediction, I upgraded the SVM from a ranking SVM to a regression SVM \cite{chang2011libsvm}. The objective in this step is to find a good SVM model: a good kernel function with corresponding hyperparameters. The score(metric) of a SVM model is the coefficient of determination of the prediction values and target values. In other words, the higher the score is, the more accurate the SVM estimation is. The basic approach is to performe grid search on hyperparameters for common kernels. 10-fold cross validation is used to split the datasets into training sets and test sets. The search spaces for the hyperparameters are geometric series with base 10, covering wide ranges of parapemeter spaces surrounding the optimum values (the polynomial degree is an exception, which is a drawn from a linear series). Table \ref{tab:latency} shows the kernels considered, the best parameters for each of them and corresponding best scores (1 is the maximum possible score). The target value in the dataset is latency. Linear, polynomial and rbf kernels all have good estimation accuracies, while sigmoid does not.
+%% \begin{table}[htb]
+%%   \centering
+%%   \begin{tabularx}{\textwidth}{|l|l|l|X|} \hline
+%%     kernel & best parameters & best score & comment \\ \hline
+%%     linear & {'C': 1.0} & 0.997911262124 & linear kernel shows unexpected good performance \\ \hline
+%%     poly & {'C': 10.0, 'degree': 1} & 0.997904758134 & polynomial kernel performs well; the optimum degree is 1, it differs from linear kernel only by a constant variable in the estimation value \\ \hline
+%%     rbf & {'C': 10.0, 'gamma': 0.1} & 0.998510004994 & radial basis function kernel has the best performance \\ \hline
+%%     sigmoid & {'C': 0.0001} & -0.117680908896 & sigmoid has bad performance \\ \hline
+%%   \end{tabularx}
+%%   \caption{Regression SVM latency estimation results for 4 kernels}
+%%   \label{tab:latency}
+%% \end{table}
+%% \subsection{Regression SVM power estimation accuracy evaluation}
+%% In this step, I evaluate the estimation accuracy of target variable power for different kernels. The approach is the same as that in previous step. Table \ref{tab:power} shows the evaluation results for different kernels. The results are similar to the previous step.
+%% \begin{table}[htb]
+%%   \centering
+%%   \begin{tabularx}{\textwidth}{|l|l|l|X|} \hline
+%%     kernel & best parameters & best score & comment \\ \hline
+%%     linear & {'C': 100.0} & 0.966341472123 & linear kernel performs well \\ \hline
+%%     poly & {'C': 10.0, 'degree': 1} & 0.96634104226 & polynomial kernel performs well; the optimum degree is 1 \\ \hline
+%%     rbf & {'C': 100.0, 'gamma': 0.1} & 0.996458564078 & radial basis function kernel has the best performance \\ \hline
+%%     sigmoid & {'C': 0.01} & -0.10638804199 & sigmoid has bad performance \\ \hline
+%%   \end{tabularx}
+%%   \caption{Regression SVM power estimation results for 4 kernels}
+%%   \label{tab:power}
+%% \end{table}
+%% \subsection{Network optimization for power latency product}
+%% This is the first try of network optimization for low power latency product. The goal is to assess the current performance of SVM regression in real action. The network quality is defined as the product of power and latency. 2 SVMs independently estimate 2 metric targets of a network: power and latency. One of them fits to the data for the target power, ignoring latency; the other fits to the data for the target latency, ignoring power. Based on previous model accuracy evaluations, both of the SVM adopt rbf kernels with hyperparameters optimized by grid search. Figure \ref{fig:latency-power} shows the optimization process.
+%% \begin{figure}[htb]
+%%   \centering
+%%       {\includegraphics[width=\textwidth]{trace-2015-01-15.png}}
+%%       \rule{\linewidth}{1pt}
+%%       \caption{An optimization process with quality defined as latency-power product}
+%%       \label{fig:latency-power}
+%% \end{figure}
+%% In the optimization, the variance of latency is much smaller than the variance of power, leading to the similarity of trends between power and latency power product. The optimization is good till about 200 steps, when the power prediction starts to deviate from the real value. This phenomenon suggests there are missing features that have a great effect on power for networks with small number of links. So what I need to do in the next step is to find out this missing feature.
+%% \subsection{Feature expansion: router leakage power and degree norm}
+%% In this step, I added a new feature to facilitate power estimation accuracy improvement. We know that router leakage power is a substantial part in total power consumption, which is usually estimated as a polynomial of degree 2 of the port count. \cite{sanchez2010analysis, chan2005nocee} So the total leackage power is the sum of these polynomials. As the terms with degree 1 in these polinomials sum up as the total port count(which is exactly twice the total link count in the existing feature set), these terms with degree 1 do not need to be taken into account again. What needs to be taken into account is thus the sum of the terms with degree 2, which is the sum of squares of port counts. If we use the standard terminology degree(of a node in a graph) to refer to the port count of the router. The degrees of all the routers form a degree vector, and the square of the norm of the degree vector is the feature to charaterize the sum of squres of port counts. We use the term degree norm to refer to this feature. Figure \ref{fig:degree_norm} shows the improved optimization. The power estimation is much better than it was before, but still has space for improvement.
+%% \begin{figure}[htb]
+%%   \centering
+%%       {\includegraphics[width=\textwidth]{trace-2015-01-17.png}}
+%%       \rule{\linewidth}{1pt}
+%%       \caption{Improved optimization process after new feature degree norm}
+%%       \label{fig:degree_norm}
+%% \end{figure}
 
-\subsection{Network design features}
-The features used to characterize the network are shown in Table \ref{tab:features}.
-\begin{table}[htb]
-  \centering
-  \begin{tabularx}{\textwidth}{|l|X|} \hline
-    name & description \\ \hline
-    average degree & the average number of edges connected to a node \\ \hline
-    %% link count & total number of links \\ \hline
-    path length & average hop count in a path \\ \hline
-    diameter & the maximum eccentricity of any node \\ \hline
-    radius & the minimum eccentricity of any node \\ \hline
-    %% link-cost & average time cost of a link \\ \hline
-    %% route-cost & average time cost of a route \\ \hline
-    %% buffer-size & link buffer size \\ \hline
-    %% packet-size & size of packet in bytes \\ \hline
-    routing & LASH routing mechanism \cite{skeie2002layered} \\ \hline
+%% \subsection{Comparison with mesh topology}
+%% The estimation accuracy has become very stable and accurate now and the optimization results looks very good (figure attached). I compared the final design quality and metrics with those of mesh and the machine optimized network is superior in almost every aspect I compared (power is the only exception). 
+
+%% \section{Next steps}
+%% \subsection{New learners: Boosted Regression Trees and LambdaMART}
+%% http://statsr.wikispaces.com/Boosted+Regression+Trees\\
+%% http://sourceforge.net/p/lemur/wiki/RankLib
+%% \subsection{Bayesian optimization and Guassian processes}
+%% Gaussian process and continuous to discrete optimization \cite{brochu2010tutorial}.
+%% \subsection{Study a Bayesian optimization for hardware design}
+%% Computer architecture design optimization with Bayesian optimization \cite{demasiusing}.
+%% \subsection{New learning algorithm}
+%% An learning algorithm that fits online learning is needed, because learning process is getting longer as training data-set increases. By 2014-12-19, the training dataset has exceeded 1.5K training instances; every new learning takes more than 1 day. Current learning frequency is once every search cycle, but it is still too expensive. Also I will find a ML library to replace the current standalone learning program to avoid system calls and file read / write operations, to speedup the learning and searching.
+%% \subsection{Learning algorithm tuning}
+%% More suitable kernels and parameters may help the SVM used in this project to fit the learning task better. However, systematic and effective tuning is itself a search problem - I am essentially searching for a optimum SVM setup. I will need more knowledge to carry out this search.
+%% \subsection{Model oriented learning}
+%% One of the assumption of this project is that the quality of an arbitrary design can be accurately predicted by a model built by a learning algorithm. It is not clear if this assumption depends on any conditions. It is possible that the tool has to learn a much more complex model, because its purpose is to serve as an analytical replacement of the simulator(which is very complex) in situations where accuracy requirement is low. This model will be less accurate than the the simulator, but also has to be much less expensive to use. This work depends on a good knowledge on both the simulator design and learning technique.
+%% \subsection{Large neighborhood and first-choice hill climbing}
+%% Big neighborhood provide more opportunities for uphill moves, but they are usually way too slow because there are too many neighbors to examine. For example, even if the radius of the neighborhood increases to only 3, the climbing speed can drop to 2 uphill moves per hour. In future work, I will examine the possibility of combining large neighborhood with first-choice hill climbing, as first-choice hill climbing can avoid exhaustive examination of the entire neighborhood and its performance penalty. However, this approach with a very large neighborhood has a drawback. The hill climbing might have very big actions so that it becomes more like a series of jumps in the search space, instead of climbing a hill step by step, as in a typical local search.
+%% \subsection{Small neighborhood and simulated annealing}
+%% Simulated annealing can also address the issue of getting stuck at local optima, which I should also try in the future. As the workload of simulated annealing is even higher than a normal hill climbing search,only small neighborhood should be consider in this scenario. The drawback of this approach is not clear yet.
+%% \subsection{less critical}
+%% genetic and beam search. more random restarts. more diverse initial states. turn off simulator.
+%% \subsection{Adaptive searching}
+%% Instead of fix the hill climbing methods, the agent might adapt its searching algorithm to the specific situation it is in. For example, at the beginning of the search, it can use first-choice hill climbing with large neighborhood to rapidly approach a good neighborhood; then it can switch to simulated annealing with small neighborhood to conduct more thorough search around that neighborhood.
+%% \subsection{Neighbor filtering}
+%% I will consider to find high performance filter to discard the neighbors with bad qualities before they are examined by the objective function to reduce the workload of the examination. This filter must be less expensive than the objective function.
+%% \subsection{Program profiling}
+%% Currently, program run time is not a the primary focus, but the prolonged search process does have an negative effect to the project. Profiling is worth considering in the future.
+
+%% \section{Introduction}
+%% \subsection{Motivation and challenges}
+%% The problem this project focuses on is on-chip network design automation. On-chip network has become increasingly prevalent as the communication system in modern chip designs. A key in a good on-chip network is usually a good trade-off between many conflicting design features. An architect might be able to tell how good every feature of the design is, but even the most experienced architects can have only a vague idea about the best trade-off point. Along with the exponential growth of design complexity, design quality analysis and design feature trade-off become more difficult. Therefore, performing a large number simulations has become the primary method for many design optimization tasks. Although we have sophisticated simulators \cite{amoretti2014modeling} \cite{jiang2013detailed} to accurately assess design qualities, design processes still heavily depend on intellectual engagement of human. Also, simulation based design processes are time consuming because simulations are getting more expensive. Computer aided design tools we have now mostly deal with only low level design optimization, but not high level design optimization. This leads to a well known issue in chip design - productivity gap: design complexity keeps increasing rapidly, but designer productivity is lagged behind.
+%% \subsection{Solution approach}
+%% The solution proposed in this project is to construct a simple computer aided design tool for on chip network optimization. More specifically, a network design problem is formulated as a optimization problem and build a high level design tool with searching \cite{ganguly2011scalable} and learning ability to automatically optimize a network design, given design constraints and performance measure. The goal is that this tool can optimize a network autonomously, or at least significantly reduce the workload of human designers in a design process and therefore increase designer productivity.
+%% \subsection{Results}
+%% The current empirical results have not provide evidence suggesting that the tool is already effective enough for network optimization task. The fundamental problem is that the objective function learned so far cannot accurately predicts network design qualities, resulting in unsuccessful local search for optimum designs.
+
+%% \section{Problem setup}
+%% \subsection{Assumptions}
+%% There are 3 assumptions on which this project is built:
+%% \begin{enumerate}
+%% \item On-chip network design can be successfully formulated as an optimization problem.
+%% \item The quality of an arbitrary network design can be predicted by a model built by a learning algorithm.
+%% \item The network simulator can accurately evaluate an arbitrary network design.
+%% \end{enumerate}
+%% \subsection{Task definition and formulation}
+%% The typical network architecture design task for a human architect is an iterative process of the following steps:
+%% \begin{enumerate}
+%% \item{The architect analyzes the current design, and consider a few similar new designs}
+%% \item{The architect assesses the qualities of new designs using his knowledge}
+%% \item{The architect chooses a design with high quality and test it with a simulator}
+%% \item{The architect examines the simulation report and improves his knowledge}
+%% \item{The architect repeats the process until a good design is found}
+%% \end{enumerate}
+%% Compared to a human architect, an artificial architect(a computer program) probably fits this iterative process better with its sheer amount of computing resources a human cannot match. In order to construct this program, we can formulate the task into an optimization process, as described below:
+%% \begin{description}
+%%   \item[Network design problem] Optimization problem;
+%%   \item[Fundamental design approach] Local search;
+%%   \item[Knowledge] Objective function in local search, also the hypothesis function in learning(see below);
+%%   \item[Knowledge improvement] Learning;
+%%   \item[Knowledge based design quality analysis] Objective function based design quality estimation;
+%%   \item[Simulation results] Training instances;
+%% \end{description}
+%% The essence of this tool is that it can learn an objective function that can wisely balance the trade-off between all those features and tells us what combination of them leads to the best quality design. It takes time to learn the objective functions because it demands experience acquired from real design examples.
+%% \subsection{Network design specifications}
+%% The network design can be specified by its topology adjacency matrix A, for example:
+%% \begin{align*}
+%%   \begin{pmatrix}
+%%     1 & 0 & \cdots & 0 \\
+%%     0 & 1 & \cdots & 1 \\
+%%     \vdots & \vdots & \ddots & \vdots \\
+%%     0 & 1 & \cdots & 1 \\
+%%   \end{pmatrix} \\
+%% \end{align*}
+%% where A[i,j] specifies whether there is a link from node[i] to nod[j]: 1 stands for there is a direct link, and 0 indicates there is no direct link. The matrix is symmetric, as the network is an undirected graph. Figure \ref{fig:networks} shows some visualization examples for networks.
+%% \begin{figure}[htb]
+%%   \centering
+%%   \begin{subfigure}
+%%     {\includegraphics[width=0.4\textwidth]{graph3.png}}
+%%   \end{subfigure}
+%%   \begin{subfigure}
+%%     {\includegraphics[width=0.4\textwidth]{graph4.png}}
+%%   \end{subfigure}
+%%   \rule{1\linewidth}{1pt}
+%%   \caption{2 examples of 64 node networks with different link counts}
+%%   \label{fig:networks}
+%% \end{figure}
+%% There are many other aspects in a network design beside network topology, which have not been taken into account yet and will be considered in future work.
+
+%% \subsection{Network design features}
+%% The features used to characterize the network are shown in Table \ref{tab:features}.
+%% \begin{table}[htb]
+%%   \centering
+%%   \begin{tabularx}{\textwidth}{|l|X|} \hline
+%%     name & description \\ \hline
+%%     average degree & the average number of edges connected to a node \\ \hline
+%%     %% link count & total number of links \\ \hline
+%%     path length & average hop count in a path \\ \hline
+%%     diameter & the maximum eccentricity of any node \\ \hline
+%%     radius & the minimum eccentricity of any node \\ \hline
+%%     %% link-cost & average time cost of a link \\ \hline
+%%     %% route-cost & average time cost of a route \\ \hline
+%%     %% buffer-size & link buffer size \\ \hline
+%%     %% packet-size & size of packet in bytes \\ \hline
+%%     routing & LASH routing mechanism \cite{skeie2002layered} \\ \hline
     
-    %% congestion control & congestion control mechanism \\ \hline
-    %% link-count & average number of links connected to a router \\ \hline
-    %% total-injection & total injection rate of the netwrok \\ \hline
-    %% max-injection & maximum injection rate at a node \\ \hline
-    %% link-bandwidth & average transmission rate of links \\ \hline
-    %% route-bandwidth & average transimssion rate of routes \\ \hline
-    %% double & total-deliver & total delivery rate of the network \\ \hline
-    %% double & max-deliver & maximum delivery rate at a node \\ \hline
-    %% double & total-packet & total number of packets delivered in the simulation \\ \hline
-    %% double & congestion & maximum traffic at a node (incoming + outgoing) \\ \hline
-    %% ???? & traffic distribution & indication of which nodes bear the most traffic \\ \hline
-  \end{tabularx}
-  \caption{The network design features}
-  \label{tab:features}
-\end{table}
-Feature selection is a very important aspect in this project. Small feature sets might not be sufficient for optimization and we have considered 3 different approaches to expand a feature set:
-\begin{enumerate}
-  \item Manual expansion. This is the only approach we have implemented, and also the only process demanding human iterference in the whole framework. We start with any feature set, (e.g. average shortest path length and total number of links). and perform the optimization. After that, we can manually examine the optimization result and identify the drawbacks of the results which the learning has not taken into account yet, using our knowledge in network on chip design. At last we add new features that reflect the drawbacks of these networks into the learning problem. In this way, the learning algorithm will relate these features to design metrics and prevent future searches from getting into these bad states. This process can be repeated until the results meet optimiztion requirement.
-  \item Auto expansion. The above manual expansion approach is an iterative process just like an local search. The hard part is the features to be added into the feature set are unknown to the program. Even if we incorperate a huge feature pool, it is still hard to find a cheap way to select the right feature. Exhuastive examinination of every feature would too expensive, if it requires another complete optimization process.
-  \item Brutal expansion. This approach can be described as throwing every possible feature we can think of into the feature set and let the learning algorithm figure out which ones are useful. This seems to be a great way to exploit the power of machine learning, but it has 2 obvious drawbacks too: every feature is calculated by a piece of code, which needs human to write; and very large feature sets often have negative effect on learning outcome.
+%%     %% congestion control & congestion control mechanism \\ \hline
+%%     %% link-count & average number of links connected to a router \\ \hline
+%%     %% total-injection & total injection rate of the netwrok \\ \hline
+%%     %% max-injection & maximum injection rate at a node \\ \hline
+%%     %% link-bandwidth & average transmission rate of links \\ \hline
+%%     %% route-bandwidth & average transimssion rate of routes \\ \hline
+%%     %% double & total-deliver & total delivery rate of the network \\ \hline
+%%     %% double & max-deliver & maximum delivery rate at a node \\ \hline
+%%     %% double & total-packet & total number of packets delivered in the simulation \\ \hline
+%%     %% double & congestion & maximum traffic at a node (incoming + outgoing) \\ \hline
+%%     %% ???? & traffic distribution & indication of which nodes bear the most traffic \\ \hline
+%%   \end{tabularx}
+%%   \caption{The network design features}
+%%   \label{tab:features}
+%% \end{table}
+%% Feature selection is a very important aspect in this project. Small feature sets might not be sufficient for optimization and we have considered 3 different approaches to expand a feature set:
+%% \begin{enumerate}
+%%   \item Manual expansion. This is the only approach we have implemented, and also the only process demanding human iterference in the whole framework. We start with any feature set, (e.g. average shortest path length and total number of links). and perform the optimization. After that, we can manually examine the optimization result and identify the drawbacks of the results which the learning has not taken into account yet, using our knowledge in network on chip design. At last we add new features that reflect the drawbacks of these networks into the learning problem. In this way, the learning algorithm will relate these features to design metrics and prevent future searches from getting into these bad states. This process can be repeated until the results meet optimiztion requirement.
+%%   \item Auto expansion. The above manual expansion approach is an iterative process just like an local search. The hard part is the features to be added into the feature set are unknown to the program. Even if we incorperate a huge feature pool, it is still hard to find a cheap way to select the right feature. Exhuastive examinination of every feature would too expensive, if it requires another complete optimization process.
+%%   \item Brutal expansion. This approach can be described as throwing every possible feature we can think of into the feature set and let the learning algorithm figure out which ones are useful. This seems to be a great way to exploit the power of machine learning, but it has 2 obvious drawbacks too: every feature is calculated by a piece of code, which needs human to write; and very large feature sets often have negative effect on learning outcome.
 
-\end{enumerate}
-This process has not been automated but automation is possible.
-\subsection{Network design quality}
-There are many metrics that can be used to assess the quality of a network design, for example, latency, throughput, energy efficiency. In this project, only the energy efficiency of the final network is considered, which is evaluated by the network simulator.
-%% \subsection{Metrics}
-%% Theses metrics, shown in Table \ref{tab:metrics}, are evaluated by the external performance measures provided by the simulator, and also by the internal heuristic cost functions learned by the learning element. The performance measures and the heuristic cost functions should be in agreement as much as possible.
-%% .
+%% \end{enumerate}
+%% This process has not been automated but automation is possible.
+%% \subsection{Network design quality}
+%% There are many metrics that can be used to assess the quality of a network design, for example, latency, throughput, energy efficiency. In this project, only the energy efficiency of the final network is considered, which is evaluated by the network simulator.
+%% %% \subsection{Metrics}
+%% %% Theses metrics, shown in Table \ref{tab:metrics}, are evaluated by the external performance measures provided by the simulator, and also by the internal heuristic cost functions learned by the learning element. The performance measures and the heuristic cost functions should be in agreement as much as possible.
+%% %% .
+%% %% \begin{table}[htb]
+%% %%   \centering
+%% %%   \begin{tabularx}{\textwidth}{|l|X|} \hline
+%% %%     name & description \\ \hline
+%% %%     time-cost &  time consumed to finish the given workload \\ \hline
+%% %%     energy-cost &  energy consumed to finish the given workload \\ \hline
+%% %%     area-cost &  area required by the components on the chip \\ \hline
+%% %%   \end{tabularx}
+%% %%   \caption{The metrics evaluated by the performance measure and heuristic cost functions}
+%% %%   \label{tab:metrics}
+%% %% \end{table}
+
+%% %% \subsection{Quality}
+%% %% There should be another predefined evaluation function to assess the overall quality of a design based on its metrics. In the current setting, the quality evaluated only by energy consumption
+
+
+%% \section{Task environment}
+%% \subsection{Performance measure}
+%% There are many ways to measure the performance of the architect program. A few obvious measures are listed below:
+%% \begin{description}
+%%   \item[Design quality] This is to be compared to energy efficiency of a few commonly adopted network topology.
+%%   \item[Objective function accuracy] This is closely related to the design quality. More accurate objective function can naturally leads to better outcome of the local search for the final design. It is measured by testing accuracy of the hypothesis on a randomly generated testing data-set.
+%%   \item[Search speed] This is the search step count for the local search to find a local optimum design. The faster the search can reach a local optimum, the better.
+%%   \item[Long term improvement] During every local search process, the architect program invokes the simulator to accumulate more training data. This setup allows the learning element to improve the accuracy of the objective function to achieve long term improvement of the search. This long term improvement can be evaluated by comparing the final design quality of one local search to those of previous local searches.
+%% \end{description}
+%% The quality of the network design considered in this project is the energy efficiency. Other design metrics will be taken into account in future research.
+%% \subsection{Environment}
+%% The only significant element in the environment is the network simulator(which is developed by Professor Partha Pande's group at Washington State University). The simulator's characteristics are described in Table \ref{tab:environment}.
 %% \begin{table}[htb]
 %%   \centering
-%%   \begin{tabularx}{\textwidth}{|l|X|} \hline
-%%     name & description \\ \hline
-%%     time-cost &  time consumed to finish the given workload \\ \hline
-%%     energy-cost &  energy consumed to finish the given workload \\ \hline
-%%     area-cost &  area required by the components on the chip \\ \hline
+%%   \begin{tabularx}{\textwidth}{|l|l|X|} \hline
+%%     type & name & description \\ \hline
+%%     input & design specification &  network configuration files \\ \hline
+%%     input & workload specification & simulation benchmark \\ \hline
+%%     output & metrics & time, energy consumption, etc \\ \hline
 %%   \end{tabularx}
-%%   \caption{The metrics evaluated by the performance measure and heuristic cost functions}
-%%   \label{tab:metrics}
+%%   \caption{The characteristics of the simulator}
+%%   \label{tab:environment}
 %% \end{table}
+%% The benchmark used in this project is only the bodytrack \cite{bienia2011benchmarking}, more benchmarks will be included in the future.
+%% \subsection{Actuators and sensors}
+%% They are responsible to write the design configuration files for the simulator, invoke the simulator to do experiments, read the simulation result file and extract design quality information from the simulation result.
 
-%% \subsection{Quality}
-%% There should be another predefined evaluation function to assess the overall quality of a design based on its metrics. In the current setting, the quality evaluated only by energy consumption
-
-
-\section{Task environment}
-\subsection{Performance measure}
-There are many ways to measure the performance of the architect program. A few obvious measures are listed below:
-\begin{description}
-  \item[Design quality] This is to be compared to energy efficiency of a few commonly adopted network topology.
-  \item[Objective function accuracy] This is closely related to the design quality. More accurate objective function can naturally leads to better outcome of the local search for the final design. It is measured by testing accuracy of the hypothesis on a randomly generated testing data-set.
-  \item[Search speed] This is the search step count for the local search to find a local optimum design. The faster the search can reach a local optimum, the better.
-  \item[Long term improvement] During every local search process, the architect program invokes the simulator to accumulate more training data. This setup allows the learning element to improve the accuracy of the objective function to achieve long term improvement of the search. This long term improvement can be evaluated by comparing the final design quality of one local search to those of previous local searches.
-\end{description}
-The quality of the network design considered in this project is the energy efficiency. Other design metrics will be taken into account in future research.
-\subsection{Environment}
-The only significant element in the environment is the network simulator(which is developed by Professor Partha Pande's group at Washington State University). The simulator's characteristics are described in Table \ref{tab:environment}.
-\begin{table}[htb]
-  \centering
-  \begin{tabularx}{\textwidth}{|l|l|X|} \hline
-    type & name & description \\ \hline
-    input & design specification &  network configuration files \\ \hline
-    input & workload specification & simulation benchmark \\ \hline
-    output & metrics & time, energy consumption, etc \\ \hline
-  \end{tabularx}
-  \caption{The characteristics of the simulator}
-  \label{tab:environment}
-\end{table}
-The benchmark used in this project is only the bodytrack \cite{bienia2011benchmarking}, more benchmarks will be included in the future.
-\subsection{Actuators and sensors}
-They are responsible to write the design configuration files for the simulator, invoke the simulator to do experiments, read the simulation result file and extract design quality information from the simulation result.
-
-\section{System design}
-The system level design follows the learning agent framework from Russell and Norvig \cite{russell1995modern}.
-%% \subsection{Percepts}
-%% The percepts, shown in Table \ref{tab:percepts}, are directly aquired by the sensor from the enviroment as the raw information of a design.
-%% \begin{table}[htb]
-%%   \centering
-%%   \begin{tabularx}{\textwidth}{|l|X|} \hline
-%%     name & description \\ \hline
-%%     node-location[i] & Cartesian coordinates (x,y) of node[i] \\ \hline
-%%     traffic[i][j] & traffic from node[i] to node[j] in packets/second \\ \hline
-%%     link-cost[i][j] & the time cost of the link from node[i] to node[j] \\ \hline
-%%     buffer-size & link buffer size \\ \hline
-%%     packet-size & size of packet in bytes \\ \hline
-%%     routing & routing mechanism \\ \hline
-%%     time-cost &  time consumed to finish the given workload \\ \hline
-%%     energy-cost &  energy consumed to finish the given workload \\ \hline
-%%     area-cost &  area required by the components on the chip \\ \hline
-%%   \end{tabularx}
-%%   \caption{The percepts received by the sensor}
-%%   \label{tab:percepts}
-%% \end{table}
-\subsection{Critic}
-It analyzes the design and constructs the design features. The training data is stored in a file for the learning element. A training data instance will have the following format:
-\begin{align*}
-[training-example] &= [quality] [features]\\
-[quality] &= [energy]\\
-[features] &= [1:degree] [2:average-path-length] [3:diameter] [4:radius]
-\end{align*}
-Below are a few training-examples:\\
-2.86818e-05 1:6 2:2.45337301587 3:4 4:3\\
-2.71615e-05 1:6 2:2.46974206349 3:4 4:3\\
-2.86003e-05 1:6 2:2.48859126984 3:4 4:3\\
-2.76535e-05 1:6 2:2.48015873016 3:4 4:3\\
-2.73489e-05 1:5 2:2.70138888889 3:4 4:4\\
-2.86277e-05 1:4 2:3.29216269841 3:6 4:4\\
-\subsection{Learning element}
-I use a support vector machine \cite{joachims2006training} in this project. The hypothesis this SVM needs to learn is the following function: for any network design, given the design features, the function predicts its energy consumption.
-\begin{align*}
-  design.energy &= hypothesis(design.features)
-\end{align*}
-However, as the SVM in use is not a regression learner, the exact prediction value does not have absolute meaning. But that does not affect its purpose of guiding the search, because it still gives predictions and instances with higher energy values gets higher predictions, all it needs to do is to distinguish the relative relation between different design's energy consumption.
-\subsection{Performance element}
-It carries out the local search using the objective function. In a normal hill climbing, higher quality designs should have higher values/scores. So a natual choice to meet the goal of reducing energy consumption is to the the objective as the negation of energy consumption
-\begin{align*}
-  design.score
-  &= objective(design.features)\\
-  &= - hypothesis(design.features)
-\end{align*}
-\section{Solution approach: optimization process}
-The network optimization process is formulated as a local search using the framework from Russell and Norvig \cite{russell1995modern}.
-\subsection{Naive approach: basic hill climbing}
-The naive approach has only enough capability to finish a single search. It has many drawbacks, for example, prone to getting stuck at a local optimum, no long term improvement, no quality guarantee. It is merely a simple starting point. The specifics in the search are described in this section.
-\begin{description}
-\item[State]
-Every search state is a network design, an undirected graph.
-\item[Value]
-The value of every state is the design quality estimated by the objective function. The objective function is a model built by the SVM. The parameters of the objective function are the network features, which are calculated using standard graph algorithms.
-\item[Actions]
-For every design, the agent applies a list of actions to it. Every action changes the connectivity within a unique cluster of size n (n number of nodes) to generate a successor design. For example, if the size of a cluster n is 4, the action is to change the connectivity within the 4 nodes in the cluster. Specifically, the action does the following modifications in that cluster: if there is a link between 2 nodes, the action removes that link; if there is no link between 2 nodes, the action adds a link between the 2 nodes. Every possible k-combination of n nodes correspond an action.
-\item[Neighborhood]
-The above actions lead the search from the current state to a number of neighbor states. All these neighbor states compose a neighborhood. The cluster size n can be considered as the radius of the neighborhood. Large n allows a large actions and therefore large neighborhood. The number of neighbors(also the number of actions) in a neighborhood of radius k is therefore
-\begin{align*}
-  C(n,k) = \frac{n!}{k!(n-k)!}
-\end{align*}
-\end{description}
-\subsection{Refinement: random restart, learning and feedback}
-Random restart is a common technique to reduce the issue of stuck-at local optima. learning and feedback is not typically found in a local search, as usually the objective function is assumed to be predefined and accurate. In this project, the initial objective function is learned from a limited data-set consisting of 1K instances of random network designs. Currently the accuracy of this objective function (and also the local search based on it) is not ideal. To address the problem of inaccurate objective function, learning is incorporated into the search process. At every search step, instead of moving directly into the next state, the agent invokes the simulator to experimentally evaluate the quality of the next design it has chosen. Then it adds information provided by this experiment(the quality and features of this next design) as a new instance into the training data-set and relearns the objective function after each search cycle. This approach has these advantages:
-\begin{enumerate}
-  \item As the search process enters new search regions, the model can be improved as new simulations can provide new training instances. Therefore, the search becomes more effective, as the model is adapted to the new environment continuously. In this way, the requirement for the previous learning process is also reduced: the model does not have to have good performance in the whole search space before the search starts.
-  \item Learning is made more effective, too. The previous learning process is randomly conducted, as there are no substantial learning goals. But now there are. As the search is guided by the the model, so is the learning. It is likely that the search is moving towards more promising search region, where designs are better. So essentially the learner puts more effort on more promising designs. That might be a good learning goal: to spend more effort to learn how good designs are like.
-  \item There will be more precise evaluation for the designs generated during the search. Without feedback from the simulator, there can be no proof that the design quality indeed improves along with the search. More interestingly, we will be able to depict and compare the design qualities predicted by the model and assessed by the simulator. This might be helpful for system tuning the improvement of both learning and searching.
-\end{enumerate}
-%% \subsection{Design evaluation}
-%% The agent evaluate the reference quality of this design by weighted averaging the metrics returned from the simulator after a experiment.
+%% \section{System design}
+%% The system level design follows the learning agent framework from Russell and Norvig \cite{russell1995modern}.
+%% %% \subsection{Percepts}
+%% %% The percepts, shown in Table \ref{tab:percepts}, are directly aquired by the sensor from the enviroment as the raw information of a design.
+%% %% \begin{table}[htb]
+%% %%   \centering
+%% %%   \begin{tabularx}{\textwidth}{|l|X|} \hline
+%% %%     name & description \\ \hline
+%% %%     node-location[i] & Cartesian coordinates (x,y) of node[i] \\ \hline
+%% %%     traffic[i][j] & traffic from node[i] to node[j] in packets/second \\ \hline
+%% %%     link-cost[i][j] & the time cost of the link from node[i] to node[j] \\ \hline
+%% %%     buffer-size & link buffer size \\ \hline
+%% %%     packet-size & size of packet in bytes \\ \hline
+%% %%     routing & routing mechanism \\ \hline
+%% %%     time-cost &  time consumed to finish the given workload \\ \hline
+%% %%     energy-cost &  energy consumed to finish the given workload \\ \hline
+%% %%     area-cost &  area required by the components on the chip \\ \hline
+%% %%   \end{tabularx}
+%% %%   \caption{The percepts received by the sensor}
+%% %%   \label{tab:percepts}
+%% %% \end{table}
+%% \subsection{Critic}
+%% It analyzes the design and constructs the design features. The training data is stored in a file for the learning element. A training data instance will have the following format:
 %% \begin{align*}
-%%   reference.quality = c1 \cdot time\_cost + c2 \cdot energy\_cost + c3 \cdot area\_cost
+%% [training-example] &= [quality] [features]\\
+%% [quality] &= [energy]\\
+%% [features] &= [1:degree] [2:average-path-length] [3:diameter] [4:radius]
 %% \end{align*}
-%% where c1, c2 and c3 are negative constants.
-%% A few design evaluation examples is below:
+%% Below are a few training-examples:\\
+%% 2.86818e-05 1:6 2:2.45337301587 3:4 4:3\\
+%% 2.71615e-05 1:6 2:2.46974206349 3:4 4:3\\
+%% 2.86003e-05 1:6 2:2.48859126984 3:4 4:3\\
+%% 2.76535e-05 1:6 2:2.48015873016 3:4 4:3\\
+%% 2.73489e-05 1:5 2:2.70138888889 3:4 4:4\\
+%% 2.86277e-05 1:4 2:3.29216269841 3:6 4:4\\
+%% \subsection{Learning element}
+%% I use a support vector machine \cite{joachims2006training} in this project. The hypothesis this SVM needs to learn is the following function: for any network design, given the design features, the function predicts its energy consumption.
 %% \begin{align*}
-%%   c1 &= -973 \\
-%%   c2 &= -65.4 \\
-%%   c3 &= -34.6 \\
-%%   ...\\
-%%   reference.quality[36] &= -937 * 87.4 + -65.4 * 8.3 + -34.6 * 2.2 = -82512.74\\
-%%   reference.quality[37] &= -937 * 37.4 + -65.4 * 4.3 + -34.6 * 1.2 = -35366.54\\
-%%   reference.quality[38] &= -937 * 87.4 + -69.4 * 4.3 + -34.6 * 1.2 = -82233.74\\
-%%   ...\\
+%%   design.energy &= hypothesis(design.features)
 %% \end{align*}
+%% However, as the SVM in use is not a regression learner, the exact prediction value does not have absolute meaning. But that does not affect its purpose of guiding the search, because it still gives predictions and instances with higher energy values gets higher predictions, all it needs to do is to distinguish the relative relation between different design's energy consumption.
+%% \subsection{Performance element}
+%% It carries out the local search using the objective function. In a normal hill climbing, higher quality designs should have higher values/scores. So a natual choice to meet the goal of reducing energy consumption is to the the objective as the negation of energy consumption
+%% \begin{align*}
+%%   design.score
+%%   &= objective(design.features)\\
+%%   &= - hypothesis(design.features)
+%% \end{align*}
+%% \section{Solution approach: optimization process}
+%% The network optimization process is formulated as a local search using the framework from Russell and Norvig \cite{russell1995modern}.
+%% \subsection{Naive approach: basic hill climbing}
+%% The naive approach has only enough capability to finish a single search. It has many drawbacks, for example, prone to getting stuck at a local optimum, no long term improvement, no quality guarantee. It is merely a simple starting point. The specifics in the search are described in this section.
+%% \begin{description}
+%% \item[State]
+%% Every search state is a network design, an undirected graph.
+%% \item[Value]
+%% The value of every state is the design quality estimated by the objective function. The objective function is a model built by the SVM. The parameters of the objective function are the network features, which are calculated using standard graph algorithms.
+%% \item[Actions]
+%% For every design, the agent applies a list of actions to it. Every action changes the connectivity within a unique cluster of size n (n number of nodes) to generate a successor design. For example, if the size of a cluster n is 4, the action is to change the connectivity within the 4 nodes in the cluster. Specifically, the action does the following modifications in that cluster: if there is a link between 2 nodes, the action removes that link; if there is no link between 2 nodes, the action adds a link between the 2 nodes. Every possible k-combination of n nodes correspond an action.
+%% \item[Neighborhood]
+%% The above actions lead the search from the current state to a number of neighbor states. All these neighbor states compose a neighborhood. The cluster size n can be considered as the radius of the neighborhood. Large n allows a large actions and therefore large neighborhood. The number of neighbors(also the number of actions) in a neighborhood of radius k is therefore
+%% \begin{align*}
+%%   C(n,k) = \frac{n!}{k!(n-k)!}
+%% \end{align*}
+%% \end{description}
+%% \subsection{Refinement: random restart, learning and feedback}
+%% Random restart is a common technique to reduce the issue of stuck-at local optima. learning and feedback is not typically found in a local search, as usually the objective function is assumed to be predefined and accurate. In this project, the initial objective function is learned from a limited data-set consisting of 1K instances of random network designs. Currently the accuracy of this objective function (and also the local search based on it) is not ideal. To address the problem of inaccurate objective function, learning is incorporated into the search process. At every search step, instead of moving directly into the next state, the agent invokes the simulator to experimentally evaluate the quality of the next design it has chosen. Then it adds information provided by this experiment(the quality and features of this next design) as a new instance into the training data-set and relearns the objective function after each search cycle. This approach has these advantages:
+%% \begin{enumerate}
+%%   \item As the search process enters new search regions, the model can be improved as new simulations can provide new training instances. Therefore, the search becomes more effective, as the model is adapted to the new environment continuously. In this way, the requirement for the previous learning process is also reduced: the model does not have to have good performance in the whole search space before the search starts.
+%%   \item Learning is made more effective, too. The previous learning process is randomly conducted, as there are no substantial learning goals. But now there are. As the search is guided by the the model, so is the learning. It is likely that the search is moving towards more promising search region, where designs are better. So essentially the learner puts more effort on more promising designs. That might be a good learning goal: to spend more effort to learn how good designs are like.
+%%   \item There will be more precise evaluation for the designs generated during the search. Without feedback from the simulator, there can be no proof that the design quality indeed improves along with the search. More interestingly, we will be able to depict and compare the design qualities predicted by the model and assessed by the simulator. This might be helpful for system tuning the improvement of both learning and searching.
+%% \end{enumerate}
+%% %% \subsection{Design evaluation}
+%% %% The agent evaluate the reference quality of this design by weighted averaging the metrics returned from the simulator after a experiment.
+%% %% \begin{align*}
+%% %%   reference.quality = c1 \cdot time\_cost + c2 \cdot energy\_cost + c3 \cdot area\_cost
+%% %% \end{align*}
+%% %% where c1, c2 and c3 are negative constants.
+%% %% A few design evaluation examples is below:
+%% %% \begin{align*}
+%% %%   c1 &= -973 \\
+%% %%   c2 &= -65.4 \\
+%% %%   c3 &= -34.6 \\
+%% %%   ...\\
+%% %%   reference.quality[36] &= -937 * 87.4 + -65.4 * 8.3 + -34.6 * 2.2 = -82512.74\\
+%% %%   reference.quality[37] &= -937 * 37.4 + -65.4 * 4.3 + -34.6 * 1.2 = -35366.54\\
+%% %%   reference.quality[38] &= -937 * 87.4 + -69.4 * 4.3 + -34.6 * 1.2 = -82233.74\\
+%% %%   ...\\
+%% %% \end{align*}
 
-%% \lstinputlisting[firstline=43]{swNoCsim/swNoCsim/architect.py}
+%% %% \lstinputlisting[firstline=43]{swNoCsim/swNoCsim/architect.py}
 
 
-\bibliographystyle{plain}
-\bibliography{architect}
+%% \bibliographystyle{plain}
+%% \bibliography{architect}
 \end{document}

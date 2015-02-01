@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 from multiprocessing import Pool
 from shutil import copyfile
+from ast import literal_eval
 from os import devnull
+from os import rename
 from pprint import pprint
 from copy import copy
 from cProfile import run
@@ -12,9 +14,13 @@ from operator import mul
 from random import uniform
 from shlex import split
 from time import strftime
+from datetime import datetime
 from subprocess import check_call
 from simpleai.search import SearchProblem
+from simpleai.search.local import hill_climbing
 from simpleai.search.local import hill_climbing_random_restarts
+from simpleai.search.local import beam
+from simpleai.search.local import beam_best_first
 from simpleai.search.local import simulated_annealing
 from sklearn import datasets
 from sklearn.svm import SVR
@@ -38,14 +44,13 @@ from networkx import draw
 from networkx import draw_networkx_edge_labels
 from networkx import gnm_random_graph
 from networkx import to_numpy_matrix
-from networkx import to_dict_of_lists
 from networkx import to_dict_of_dicts
 from networkx import to_edgelist
+from networkx import shortest_path
 from networkx import shortest_path_length
 from networkx import average_shortest_path_length
 from numpy import loadtxt
 from numpy import savetxt
-from numpy import genfromtxt
 from numpy import delete
 from numpy import arange
 from numpy import asarray
@@ -65,8 +70,10 @@ from numpy import linspace
 from numpy import squeeze
 from numpy import histogram
 from pandas import read_csv
+from pandas import DataFrame
 from matplotlib import use
 use('Agg')
+from matplotlib.pyplot import figure
 from matplotlib.pyplot import savefig
 
 class Critic(object):
@@ -99,13 +106,19 @@ class Learner(object):
             svrs.append(SVR('rbf'))
             estimators.append(GridSearchCV(svrs[i], parameters, n_jobs = -1))
             estimators[i].fit(data[target_count], data[i])
+            print 'learner: build_estimators: benchmark =', performer.benchmark
             print 'best_params=', estimators[i].best_params_,
             print 'best_score=', estimators[i].best_score_
         return estimators
 learner = Learner()
 
 class Performer(object):
+    optimization_targets = ['latency', 'power', 'power_latency_product']
+    optimization_target = 'latency'
     benchmarks = ['bodytrack', 'canneal', 'dedup', 'fluidanimate', 'freqmine', 'swaption', 'vips']
+    benchmark = None
+    document_directory = 'documents/'
+    tex = 'architect.tex'
     configuration_mesh_template = 'booksim2/src/examples/mesh88_lat'
     simulation_log_mesh = 'simulation_mesh.log'
     database = {}
@@ -119,14 +132,11 @@ class Performer(object):
         entry['configuration_mesh'] = 'booksim2/src/examples/mesh88_lat_' + benchmark
         entry['simulation_log'] = 'simulation_' + benchmark +'.log'
         entry['dataset'] = 'dataset_' + benchmark + '.dat'
-        entry['stats'] = 'stats_' + benchmark + '.dat'
         entry['design'] = 'design_' + benchmark + '.log'
-        entry['trace'] = 'documents/trace_' + benchmark + '.png'
-        entry['result'] = 'documents/result_' + benchmark + '.png'
+        entry['trace'] = document_directory +'trace_' + benchmark + '.png'
+        entry['links'] = document_directory +'links_' + benchmark + '.png'
+        entry['result'] = document_directory +'result_' + benchmark + '.png'
         database[benchmark] = entry
-    # pprint(database)
-    benchmark = benchmarks[0]
-    DOCUMENT = 'documents/architect'
     DIMENSION = 2
     RADIX = 8
     NODE_COUNT = RADIX ** DIMENSION
@@ -145,9 +155,11 @@ class Performer(object):
                         self.weighted_length(performer.database[benchmark]['traffic'], graph, 'weight'),
                         diameter(graph), radius(graph), norm(graph.degree().values())**2]
         return raw_features
+    def set_radix(self, radix):
+        self.RADIX = radix
     def set_benchmark(self, benchmark):
         self.benchmark = benchmark
-        print 'benchmark =', self.benchmark
+        print 'performer: initialized', self.benchmark, self.optimization_target
     def initialize_mesh(self, benchmark):
         self.benchmark = benchmark
         print 'benchmark =', self.benchmark
@@ -181,8 +193,6 @@ class Performer(object):
         names += '\t predicted_' + '\t predicted_'.join(HEADER)
         with open(performer.database[benchmark]['dataset'], 'w+') as stream:
             print >> stream, names
-        with open(performer.database[benchmark]['stats'], 'w+') as stream:
-            print >> stream, 'time\t', 'edge_weight_distribution\t', names
         with open(performer.database[benchmark]['design'], 'w+') as stream:
             print >> stream, 'time\t' + 'design'
         for round in range(instance_count):
@@ -219,6 +229,12 @@ class Performer(object):
                 path_lengths[source][destination] = raw_path_lengths[source][destination]
         averaged_traffic = tile(traffic, (self.NODE_COUNT,1))
         return average(path_lengths, weights = averaged_traffic)
+    def get_edge_weight_histogram(self, graph):
+        edge_weights=[]
+        for edge in graph.edges(data = True):
+            edge_weights.append(edge[2]['weight'] - self.NODE_WEIGHT)
+        edge_weight_histogram = histogram(edge_weights, bins = max(edge_weights))[0].tolist()
+        return edge_weight_histogram
     def estimate_sample(self, raw_features):
         raw_sample = asarray(range(self.TARGET_COUNT) + raw_features)
         predicted_sample = actuator.scaler.transform(raw_sample)
@@ -229,7 +245,52 @@ class Performer(object):
         predicted_raw_targets = predicted_raw_sample[:self.TARGET_COUNT]
         return predicted_raw_targets
     def evaluate_quality(self, raw_targets):
-        return -(raw_targets[0] * raw_targets[1])
+        if self.optimization_target == 'power_latency_product':
+            return -(raw_targets[0] * raw_targets[1])
+        elif self.optimization_target == 'latency':
+            return -raw_targets[0]
+        elif self.optimization_target == 'power':
+            return -raw_targets[1]
+        else:
+            raise NameError('unknown optimization_target')
+    def string_to_graph(self, graph_string):
+        return Graph(literal_eval(graph_string))
+    def get_targets(self, graph):
+        return [1,2]
+        # return actuator.evaluate_metrics(self.benchmark, graph, self.TARGET_TOKENS)
+    def get_path_length(self, graph):
+        return self.weighted_length(performer.database[self.benchmark]['traffic'], graph, 'weight')
+    def get_degree(self, graph):
+        return graph.degree().values()
+    def get_degree_norm(self, degrees):
+        return norm(degrees)**2
+    def review(self):
+        final = read_csv(self.database[self.benchmark]['design'], index_col = 'time ',
+                        sep = '\t', skipinitialspace = True)
+        final['graph'] = map(self.string_to_graph, final['design'])
+        final['edge_weight_distribution'] = map(self.get_edge_weight_histogram, final['graph'])
+        final['edge_count'] = map(number_of_edges, final['graph'])
+        final['path_length'] = map(self.get_path_length, final['graph'])
+        final['diameter'] = map(diameter, final['graph'])
+        final['radius'] = map(radius, final['graph'])
+        final['real_latency'], final['real_power'] = zip(*map(self.get_targets, final['graph']))
+        final['real_latency_power_product'] = map(mul, final['real_latency'], final['real_power'])
+        final['degrees'] = map(self.get_degree, final['graph'])
+        final['degree_average'] = map(average, final['degrees'])
+        final['degree_max'] = map(max, final['degrees'])
+        final['degree_min'] = map(min, final['degrees'])
+        final['degree_norm'] = map(self.get_degree_norm, final['degrees'])
+        print final[['degree_average', 'degree_max', 'degree_min', 'degree_norm']]
+        return final
+        # w1 = self.weighted_length(self.database[self.benchmark]['traffic'], graph, 'weight')
+        # for source, destination, design in graph.edges(data=True):
+        #     design['weight'] = self.NODE_WEIGHT
+        # w2 = self.weighted_length(self.database[self.benchmark]['traffic'], graph, 'weight')
+        # print w1/w2
+        # pprint(to_dict_of_dicts(graph))
+        # pprint(shortest_path_length(graph))
+        # pprint(shortest_path_length(graph, weight = 'weight'))
+        return
 performer = Performer()
 
 class Sensor(object):
@@ -264,7 +325,8 @@ class Actuator(object):
         data_instance = []
         data_instance = (real_raw_targets + [- real_quality])
         print '\t'.join(map(str, data_instance))
-    def add_data(self, benchmark, graph, target_tokens, dataset, initial = False):
+        return
+    def evaluate_metrics(self, benchmark, graph, target_tokens):
         with open(performer.database[benchmark]['topology'], 'w+') as stream:
             for source in graph:
                 destinations = []
@@ -277,9 +339,12 @@ class Actuator(object):
             with open('error.log', 'w+') as error_log:
                 check_call([self.SIMULATOR, performer.database[benchmark]['configuration']],
                            stdout = stream, stderr = error_log)
+        real_raw_targets = sensor.extract_targets(performer.database[benchmark]['simulation_log'], target_tokens)
+        return real_raw_targets
+    def add_data(self, benchmark, graph, target_tokens, dataset, initial = False):
+        print 'actuator: add_data:', 'benchmark =', benchmark
+        real_raw_targets = self.evaluate_metrics(benchmark, graph, target_tokens)
         raw_features = performer.extract_features(benchmark, graph)
-        real_raw_targets = sensor.extract_targets(
-            performer.database[benchmark]['simulation_log'], target_tokens)
         real_raw_sample = real_raw_targets + raw_features
         real_quality = performer.evaluate_quality(real_raw_targets)
         data_instance = []
@@ -292,6 +357,14 @@ class Actuator(object):
                          [- predicted_quality] + predicted_raw_targets)
         with open(dataset, 'a') as stream:
             print >> stream, '\t'.join(map(str, data_instance))
+        return
+    def reformat(self, benchmark):
+        final = read_csv(performer.database[benchmark]['design'], index_col = 'time ',
+                        sep = '\t', skipinitialspace = True)
+        print final
+        # final.insert(0, 'benchmark', benchmark)
+        # final.insert(1, 'optimization_target', 'power_latency_product')
+        # final.to_csv(performer.database[benchmark]['design'], sep = '\t')
 actuator = Actuator()
 
 class Optimization(SearchProblem):
@@ -328,51 +401,57 @@ def draw_graph(graph):
     savefig(temp.png)
     return
 
+def visualize(benchmark, quantity):
+    performer.set_benchmark(benchmark)
+    data_file = None
+    axes = None
+    figure()
+    if quantity == 'links':
+        data = performer.review()
+        best_design = data.ix[data['real_latency_power_product'].idxmin()]
+        frequencies = best_design['edge_weight_distribution']
+        lengths = [x+1 for x in range(len(frequencies))]
+        data_frame = DataFrame(frequencies, index = lengths, columns = ['weight_frequency'])
+        print data_frame
+        axes = data_frame.loc[:,'weight_frequency'].plot(kind = 'bar')
+        axes.set_xlabel(benchmark + '_network_link_weight')
+        axes.set_ylabel('degree (frequency)')
+    if quantity == 'result':
+        data = performer.review()
+        data_filtered = data[data['real_latency_power_product'] < 900]
+        axes = data_filtered.loc[:,['real_latency_power_product']].plot(kind = 'hist')
+        axes.set_xlabel(benchmark + '_network_latency_power_product')
+    elif quantity == 'trace':
+        data_file = 'dataset'
+        data = read_csv(performer.database[benchmark][data_file], sep = '\t', skipinitialspace = True)
+        axes = data.loc[100:,['real_latency_power_product']].plot()
+        axes.set_xlabel(benchmark + '_network_optimization_step')
+    axes.get_figure().savefig(performer.database[benchmark][quantity])
+    return
+def analyze(benchmark):
+    performer.set_benchmark(benchmark)
+    # for interest in ['trace', 'result', 'links']:
+        # visualize(benchmark, interest)
+    return
+
 def design(benchmark):
+    performer.set_benchmark(benchmark)
     restarts = 10
     iterations = 200
+    performer.update_estimators(performer.database[performer.benchmark]['dataset'], 4)
     for trial in range(restarts):
-        print 'benchmark =', benchmark, 'trial =', trial, '/', restarts
-        performer.update_estimators(performer.database[benchmark]['dataset'], 4)
+        print 'design:', 'benchmark =', performer.benchmark + ';',
+        print 'optimization_target =', performer.optimization_target + ';',
+        print 'trial =', trial
         final = hill_climbing_random_restarts(optimization, 1, iterations)
-        time_stamp = strftime('%Y-%m-%d-%H-%m-%S') + '\t'
-        with open(performer.database[benchmark]['design'], 'a') as stream:
-            print >> stream, time_stamp, to_dict_of_dicts(final.state)
-        edge_weights=[]
-        for edge in final.state.edges(data = True):
-            edge_weights.append(edge[2]['weight'] - performer.NODE_WEIGHT)
-        edge_weight_histogram = histogram(edge_weights, bins = max(edge_weights))[0].tolist()
-        with open(performer.database[benchmark]['stats'], 'a') as stream:
-            print >> stream, time_stamp, edge_weight_histogram, '\t',
-        actuator.add_data(benchmark, final.state, performer.TARGET_TOKENS, performer.database[benchmark]['stats'])
-    return
-
-def visualize(benchmark, data_file):
-    data = read_csv(performer.database[benchmark][data_file], sep = '\t', skipinitialspace = True)
-    figure_file = None
-    axes = None
-    if data_file == 'stats':
-        axes = data.loc[2:,['real_latency_power_product ']].plot(kind = 'hist')
-        axes.set_xlabel('latency_power_product')
-        figure_file = 'result'
-    elif data_file == 'dataset':
-        axes = data.loc[100:,['real_latency_power_product ', 'predicted_latency_power_product']].plot()
-        axes.set_xlabel('step')
-        figure_file = 'trace'
-    axes.get_figure().savefig(performer.database[benchmark][figure_file])
-    return
-
-def analyze(benchmark):
-    for data_file in ['stats', 'dataset']:
-        visualize(benchmark, data_file)
+        with open(performer.database[performer.benchmark]['design'], 'a') as stream:
+            print >> stream, (performer.benchmark + '\t', performer.optimization_target + '\t',
+                              str(datetime.now()) + '\t', to_dict_of_dicts(final.state))
     return
 
 if __name__ == '__main__':
-    for benchmark in performer.benchmarks:
-        # performer.initialize(benchmark, 100)
-        performer.set_benchmark(benchmark)
-    # pool = Pool(8)
-    # pool.map(design, performer.benchmarks)
-    for benchmark in performer.benchmarks:
-        analyze(benchmark)
-    check_call(['pdflatex', performer.DOCUMENT])
+    pool = Pool(8)
+    pool.map(design, performer.benchmarks)
+    # for benchmark in performer.benchmarks:
+        # analyze(benchmark)
+        # actuator.reformat(benchmark)
