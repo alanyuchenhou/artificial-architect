@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 # total power is used! need to use wire power
+# need to have good prediction accuracy logging and good critic
+# incorperate and reevaluate mesh as a special anynet
 from multiprocessing import Pool
 from shutil import copyfile
 from ast import literal_eval
@@ -31,6 +33,7 @@ from sklearn.grid_search import GridSearchCV
 from sklearn.preprocessing import scale
 from sklearn.preprocessing import StandardScaler
 from networkx import Graph
+from networkx import relabel_nodes
 from networkx import nodes
 from networkx import get_node_attributes
 from networkx import get_edge_attributes
@@ -99,7 +102,7 @@ class Critic(object):
 
 class Performer(object):
     optimization_targets = ['latency', 'power', 'latency_power_product']
-    optimization_target = optimization_targets[1]
+    optimization_target = optimization_targets[0]
     benchmarks = ['bodytrack', 'canneal', 'dedup', 'fluidanimate', 'freqmine', 'swaption', 'vips']
     benchmark = None
     document_directory = 'documents/'
@@ -140,8 +143,8 @@ class Performer(object):
     INITIAL_DATASET_SIZE = 100
     TARGET_NAMES = ['latency', 'power']
     # TARGET_TOKENS = ['Flit latency average = ', '- Channel Wire Power:      ']
-    # TARGET_TOKENS = ['Packet latency average = ', '- Total Power:             ']
-    TARGET_TOKENS = ['Packet latency average = ',  '- Channel Wire Power:      ']
+    TARGET_TOKENS = ['Packet latency average = ', '- Total Power:             ']
+    # TARGET_TOKENS = ['Packet latency average = ',  '- Channel Wire Power:      ']
     TARGET_COUNT = len(TARGET_NAMES)
     FEATURE_NAMES = ['edge_count', 'path_length', 'diameter', 'radius', 'degree_norm']
     FEATURE_COUNT = len(FEATURE_NAMES)
@@ -177,8 +180,8 @@ class Performer(object):
             svrs.append(SVR('rbf'))
             estimators.append(GridSearchCV(svrs[i], parameters, n_jobs = -1))
             estimators[i].fit(data[self.TARGET_COUNT], data[i])
-            print 'performer: update_estimators: benchmark =', performer.benchmark+';'
-            print 'performer: update_estimators: best_params =', estimators[i].best_params_, ';',
+            print 'performer: update_estimator[' + str(i) + ']: benchmark =', performer.benchmark+';'
+            print 'performer: update_estimator[' + str(i) + ']: best_params =', estimators[i].best_params_, ';',
             print 'best_score =', estimators[i].best_score_, ';'
         self.estimators = estimators
         return
@@ -200,34 +203,35 @@ class Performer(object):
             return True
         else:
             return False
+    def process_graph(self, graph):
+        for node_key, data in graph.nodes(data=True):
+            data['position'] = (node_key / self.RADIX, node_key % self.RADIX)
+            data['weight'] = self.NODE_WEIGHT
+        for source, destination, data in graph.edges(data=True):
+            data['weight'] = self.distance(graph, source, destination)
+        return
     def generate_random_graph(self):
         edge_count = uniform(self.EDGE_COUNT_MIN, self.EDGE_COUNT_MAX)
         while True:
             graph = gnm_random_graph(self.NODE_COUNT, edge_count)
             if self.constraints_satisfied(graph):
-                for node_index, data in graph.nodes(data=True):
-                    data['id'] = node_index
-                    data['position'] = (node_index / self.RADIX, node_index % self.RADIX)
-                    data['weight'] = self.NODE_WEIGHT
-                for source, destination, data in graph.edges(data=True):
-                    data['weight'] = self.distance(graph, source, destination)
+                self.process(graph)
                 return graph
+    def key_mapping(self, tuple_key):
+        new_key = tuple_key[0] * self.RADIX + tuple_key[1]
+        return new_key
     def generate_initial_graph(self):
-        graph = grid_2d_graph(self.RADIX, self.RADIX)
-        for node_index, data in graph.nodes(data=True):
-            data['id'] = node_index[0] * self.RADIX + node_index[1]
-            data['position'] = node_index
-            data['weight'] = self.NODE_WEIGHT
-        for source, destination, data in graph.edges(data=True):
-            data['weight'] = self.distance(graph, source, destination)
+        # tuple_keyed_graph = grid_2d_graph(self.RADIX, self.RADIX)
+        # graph = relabel_nodes(tuple_keyed_graph, self.key_mapping)
+        connected_watts_strogatz_graph(self.NODE_COUNT, self.DEGREE_AVERAGE, uniform(0.1, 0.9))
+        self.process_graph(graph)
         return graph
     def weighted_length(self, traffic, graph, weight):
         raw_path_lengths = shortest_path_length(graph, weight = weight)
         path_lengths = zeros((self.NODE_COUNT, self.NODE_COUNT))
         for source in raw_path_lengths:
             for destination in raw_path_lengths[source]:
-                path_lengths[graph.node[source]['id']][graph.node[destination]['id']] = (
-                    raw_path_lengths[source][destination])
+                path_lengths[source][destination] = raw_path_lengths[source][destination]
         averaged_traffic = tile(traffic, (self.NODE_COUNT,1))
         return average(path_lengths, weights = averaged_traffic)
     def get_edge_weight_histogram(self, graph):
@@ -345,10 +349,9 @@ class Actuator(object):
     def configure_topology(self, benchmark, graph):
         with open(performer.database[benchmark]['topology'], 'w+') as f:
             for source in graph:
-                connection = ['router', graph.node[source]['id'], 'node', graph.node[source]['id']]
+                connection = ['router', source, 'node', source]
                 for destination in graph[source]:
-                    connection += ['router', graph.node[destination]['id'],
-                                   graph[source][destination]['weight'] - performer.NODE_WEIGHT]
+                    connection += ['router', destination, graph[source][destination]['weight']-performer.NODE_WEIGHT]
                 f.write(' '.join(map(str, connection)) + '\n')
         return
     def evaluate_metrics(self, architecture, benchmark, graph = None):
@@ -363,13 +366,15 @@ class Actuator(object):
         real_raw_targets = sensor.extract_targets(performer.database[benchmark][simulation_log],
                                                   performer.TARGET_TOKENS)
         return real_raw_targets
-    def initialize_data_files(self, benchmark):
+    def initialize_dataset_file(self, benchmark):
         dataset_columns = (['real_' + s for s in performer.TARGET_NAMES] + performer.FEATURE_NAMES
                            + ['predicted_' + s for s in performer.TARGET_NAMES]
                            + ['real_latency_power_product', 'predicted_latency_power_product'])
         print dataset_columns
         with open(performer.database[benchmark]['dataset'], 'w+') as f:
             f.write('\t'.join(map(str, dataset_columns)) + '\n')
+        return
+    def initialize_design_file(self, benchmark):
         design_columns = ['time', 'benchmark', 'optimization_target', 'topology']
         print design_columns
         with open(performer.database[benchmark]['design'], 'w+') as f:
@@ -400,7 +405,8 @@ class Actuator(object):
                 print line.replace(line, line),
         return
     def initialize_files(self):
-        self.initialize_data_files(performer.benchmark)
+        self.initialize_dataset_file(performer.benchmark)
+        self.initialize_design_file(performer.benchmark)
         for architecture in performer.configuration_template:
             self.initialize_configuration_file(performer.benchmark, architecture)
         return
@@ -417,9 +423,9 @@ class Actuator(object):
         print data.columns.values
         if quantity == 'trace':
             print 'quantity = ', quantity
-            # axes = data.loc[100:,['real_latency_power_product', 'predicted_latency_power_product']].plot()
+            # axes = data.loc[500:,['real_latency_power_product', 'predicted_latency_power_product']].plot()
             # axes = data.loc[100:,['real_latency', 'predicted_latency']].plot()
-            axes = data.loc[100:,['real_power', 'predicted_power']].plot()
+            axes = data.loc[500:,['real_power', 'predicted_power']].plot()
             axes.set_xlabel(benchmark + '_network_optimization_step')
         elif quantity == 'links':
             best_design = data.ix[data['real_latency_power_product'].idxmin()]
@@ -483,7 +489,7 @@ def design(benchmark):
         print 'optimization_target =', performer.optimization_target + ';',
         print 'trial =', trial
         performer.update_estimators(performer.database[performer.benchmark]['dataset'], 4)
-        final = simulated_annealing(optimization)
+        final = hill_climbing(optimization, iterations_limit = iterations)
         design_instance = [datetime.now(), performer.benchmark, performer.optimization_target,
                            to_dict_of_dicts(final.state)]
         with open(performer.database[performer.benchmark]['design'], 'a') as f:
@@ -515,9 +521,13 @@ def summarize():
     return
 if __name__ == '__main__':
     pool = Pool(8)
-    pool.map(design, performer.benchmarks)
+    # pool.map(design, performer.benchmarks)
     # pool.map(analyze, performer.benchmarks)
+    pool.map(initialize, performer.benchmarks)
     # design('vips')
     # analyze('dedup')
     # performer.evaluate_mesh()
     # summarize()
+    # performer.set_radix(3)
+    # graph = performer.generate_initial_graph()
+    # pprint (to_dict_of_dicts(graph))
