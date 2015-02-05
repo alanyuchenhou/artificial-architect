@@ -24,7 +24,6 @@ from simpleai.search.local import hill_climbing_random_restarts
 from simpleai.search.local import beam
 from simpleai.search.local import beam_best_first
 from simpleai.search.local import simulated_annealing
-from sklearn import datasets
 from sklearn.svm import SVR
 from sklearn.svm import SVC
 from sklearn.grid_search import GridSearchCV
@@ -108,7 +107,7 @@ class Performer(object):
     tex = 'architect.tex'
     database = {}
     stats = {'mesh': 'stats_mesh.tsv',
-             'freenet': 'stats_freenet.tsv'
+             'freenet': 'stats_freenet.tsv',
              'accuracy': 'estimation_accuracy.tsv'}
     configuration_template = {'mesh': 'booksim2/src/examples/mesh88_lat',
                               'freenet': 'booksim2/src/examples/anynet/anynet_config'}
@@ -125,7 +124,9 @@ class Performer(object):
         entry['simulation_log_mesh'] = 'simulation_mesh_' + benchmark +'.log'
         entry['dataset'] = 'dataset_' + benchmark + '.tsv'
         entry['design'] = 'design_' + benchmark + '.tsv'
+        entry['design_mesh'] = 'design_mesh_' + benchmark + '.tsv'
         entry['stats'] = 'stats_' + benchmark + '.tsv'
+        entry['stats_mesh'] = 'stats_mesh_' + benchmark + '.tsv'
         entry['trace'] = document_directory +'trace_' + benchmark + '.png'
         entry['links'] = document_directory +'links_' + benchmark + '.png'
         entry['result'] = document_directory +'result_' + benchmark + '.png'
@@ -180,12 +181,13 @@ class Performer(object):
             svrs.append(SVR('rbf'))
             estimators.append(GridSearchCV(svrs[i], parameters, n_jobs = -1))
             estimators[i].fit(data[self.TARGET_COUNT], data[i])
-            print 'performer: update_estimator[' + str(i) + ']: benchmark =', performer.benchmark+';'
-            print 'performer: update_estimator[' + str(i) + ']: best_params =', estimators[i].best_params_, ';',
-            print 'best_score =', estimators[i].best_score_, ';'
-        accuracy_instance = [datetime.now(), benchmark, estimators[0].best_score_, estimators[1].best_score]
+            # print 'performer: update_estimator[' + str(i) + ']: benchmark =', performer.benchmark+';'
+            # print 'performer: update_estimator[' + str(i) + ']: best_params =', estimators[i].best_params_, ';',
+            # print 'best_score =', estimators[i].best_score_, ';'
+        data_instance = [datetime.now(), self.benchmark, estimators[0].best_score_, estimators[1].best_score_]
+        print  'performer: update_estimator: benchmark =', performer.benchmark+';', data_instance
         with open(self.stats['accuracy'], 'a') as f:
-            f.write('\t'.join(map(str, design_instance)) + '\n')
+            f.write('\t'.join(map(str, data_instance)) + '\n')
         self.estimators = estimators
         return
     def distance(self, graph, source, destination):
@@ -279,7 +281,7 @@ class Performer(object):
         predicted_latency_power_product = prod(predicted_raw_targets)
         data_instance = real_raw_targets + raw_features + predicted_raw_targets
         data_instance += [real_latency_power_product, predicted_latency_power_product]
-        print 'performer: add_data:', 'benchmark =', self.benchmark, data_instance
+        print 'performer: add_data:', 'benchmark =', self.benchmark + ';', data_instance
         with open(dataset, 'a') as f:
             f.write('\t'.join(map(str, data_instance)) + '\n')
         return
@@ -290,15 +292,11 @@ class Performer(object):
             self.add_data(self.database[self.benchmark]['dataset'], True, graph)
         return
     def generate_design_mesh(self):
-        design_columns = ['time', 'benchmark', 'optimization_target', 'topology']
-        with open(self.stats['mesh'], 'w+') as f:
-            f.write('\t'.join(map(str, design_columns)) + '\n')
-        for benchmark in self.benchmarks:
-            print 'performer: evaluate_mesh: benchmark =', benchmark
-            graph = self.generate_grid_graph()
-            design_instance = [datetime.now(), benchmark, self.optimization_target, to_dict_of_dicts(graph)]
-            with open(self.stats['mesh'], 'a') as f:
-                f.write('\t'.join(map(str, design_instance)) + '\n')
+        print 'performer: generate_design_mesh: benchmark =', self.benchmark
+        graph = self.generate_grid_graph()
+        design_instance = [datetime.now(), self.benchmark, self.optimization_target, to_dict_of_dicts(graph)]
+        with open(self.database[self.benchmark]['design_mesh'], 'a') as f:
+            f.write('\t'.join(map(str, design_instance)) + '\n')
         return
     def string_to_graph(self, graph_string):
         return Graph(literal_eval(graph_string))
@@ -315,11 +313,14 @@ class Performer(object):
     def analyze_designs(self, architecture):
         print 'performer: analyze_designs: architecture = ' + architecture + '; benchmark = ' + self.benchmark + ';'
         design_file = None
+        stats_file = None
         if architecture == 'freenet':
-            design_file = self.database[self.benchmark]['design']
+            design_file = 'design'
+            stats_file = 'stats'
         elif architecture == 'mesh':
-            design_file = self.stats['mesh']
-        final = read_csv(design_file, sep = '\t', skipinitialspace = True)
+            design_file = 'design_mesh'
+            stats_file = 'stats_mesh'
+        final = read_csv(self.database[self.benchmark][design_file], sep = '\t', skipinitialspace = True)
         final['graph'] = map(self.string_to_graph, final['topology'])
         final['edge_weight_distribution'] = map(self.get_edge_weight_histogram, final['graph'])
         final['edge_count'] = map(number_of_edges, final['graph'])
@@ -334,7 +335,7 @@ class Performer(object):
         final['degree_min'] = map(min, final['degrees'])
         final['degree_norm'] = map(self.get_degrees_norm, final['degrees'])
         print final[['benchmark','real_latency', 'real_power', 'real_latency_power_product']]
-        final.to_csv(performer.database[self.benchmark]['stats'], sep = '\t', index = False)
+        final.to_csv(performer.database[self.benchmark][stats_file], sep = '\t', index = False)
         # w1 = self.weighted_length(self.database[self.benchmark]['traffic'], graph, 'weight')
         # for source, destination, design in graph.edges(data=True):
         #     design['weight'] = self.NODE_WEIGHT
@@ -397,11 +398,12 @@ class Actuator(object):
         return
     def initialize_design_file(self, benchmark):
         columns = ['time', 'benchmark', 'optimization_target', 'topology']
-        with open(performer.database[benchmark]['design'], 'w+') as f:
-            f.write('\t'.join(map(str, columns)) + '\n')
+        for design_file in ['design', 'design_mesh']:
+            with open(performer.database[benchmark][design_file], 'w+') as f:
+                f.write('\t'.join(map(str, columns)) + '\n')
         return
-    def initialize_accuracy_file(self, benchmark):$
-        columns = [datetime.now(), benchmark, estimators[0].best_score_, estimators[1].best_score]
+    def initialize_accuracy_file(self, benchmark):
+        columns = [datetime.now(), benchmark, 'latency_accuracy', 'power_accuracy']
         with open(performer.stats['accuracy'], 'w+') as f:
             f.write('\t'.join(map(str, columns)) + '\n')
         return
@@ -431,10 +433,10 @@ class Actuator(object):
         return
     def initialize_files(self):
         self.initialize_accuracy_file(performer.benchmark)
-        # self.initialize_dataset_file(performer.benchmark)
-        # self.initialize_design_file(performer.benchmark)
-        # for architecture in performer.configuration_template:
-        #     self.initialize_configuration_file(performer.benchmark, architecture)
+        self.initialize_dataset_file(performer.benchmark)
+        self.initialize_design_file(performer.benchmark)
+        for architecture in performer.configuration_template:
+            self.initialize_configuration_file(performer.benchmark, architecture)
         return
     def draw_graph(graph):
         draw(graph, get_node_attributes(graph, 'position'), hold = True)
@@ -524,43 +526,53 @@ def design(benchmark):
 
 def analyze(benchmark):
     performer.self_initialize(benchmark)
-    # performer.analyze_designs('freenet')
+    performer.analyze_designs('freenet')
     # for interest in ['trace', 'result', 'links']:
-    for interest in ['trace']:
-        actuator.visualize(benchmark, interest)
+    # for interest in ['trace']:
+    #     actuator.visualize(benchmark, interest)
     return
 
 def evaluate_mesh():
-    performer.self_initialize(benchmark)
-    performer.generate_design_mesh()
-    performer.analyze_designs('mesh')
+    for benchmark in performer.benchmarks:
+        performer.self_initialize(benchmark)
+        # performer.generate_design_mesh()
+        performer.analyze_designs('mesh')
     return
 
-def summarize():
-    # metrics = ['real_latency', 'real_power', 'real_latency_power_product']
-    metrics = ['real_latency', 'real_power']
+def summarize(architecture):
+    design_file = None
+    stats_file = None
+    metrics = None
+    full_metrics = ['real_latency', 'real_power', 'real_latency_power_product']
+    if architecture == 'freenet':
+        stats_file = 'stats'
+        metrics = full_metrics
+    elif architecture == 'mesh':
+        stats_file = 'stats_mesh'
+        metrics = ['real_power']
     results = DataFrame()
     for benchmark in performer.benchmarks:
-        data = read_csv(performer.database[benchmark]['stats'], sep = '\t', skipinitialspace = True)
+        data = read_csv(performer.database[benchmark][stats_file], sep = '\t', skipinitialspace = True)
         partial_results = data.ix[data[metrics].idxmin()]
         results = results.append(partial_results, ignore_index = True)
     print results.columns.values
-    interests = ['benchmark', 'degree_average', 'degree_max']
+    interests = ['benchmark', 'degree_average', 'degree_max', 'path_length', 'degree_norm', 'edge_count']
     print results[interests + metrics]
     data = read_csv(performer.stats['mesh'], sep = '\t', skipinitialspace = True)
-    print data
-    results.to_csv(performer.stats['freenet'], sep = '\t', index = False)
+    print data[interests + full_metrics]
+    results.to_csv(performer.stats[architecture], sep = '\t', index = False)
     return
 if __name__ == '__main__':
     pool = Pool(8)
-    evaluate_mesh()
-    # pool.map(design, performer.benchmarks)
+    # design('vips')
+    pool.map(design, performer.benchmarks)
     # pool.map(analyze, performer.benchmarks)
     # pool.map(initialize, performer.benchmarks)
-    # design('vips')
+    # evaluate_mesh()
+    # initialize('vips')
     # analyze('dedup')
     # performer.evaluate_mesh()
-    # summarize()
+    # summarize('mesh')
     # performer.set_radix(3)
     # graph = performer.generate_initial_graph()
     # pprint (to_dict_of_dicts(graph))
