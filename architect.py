@@ -45,6 +45,7 @@ from networkx import density
 from networkx import draw
 from networkx import draw_networkx_edge_labels
 from networkx import gnm_random_graph
+from networkx import grid_2d_graph
 from networkx import to_numpy_matrix
 from networkx import to_dict_of_dicts
 from networkx import to_edgelist
@@ -129,12 +130,12 @@ class Performer(object):
     injection_rate = 0.0005
     packet_size = 64
     DIMENSION = 2
-    RADIX = 8
-    NODE_COUNT = RADIX ** DIMENSION
     NODE_WEIGHT = 4
     DEGREE_AVERAGE = 4
     DEGREE_MAX = 7
-    EDGE_COUNT_MIN = 70
+    RADIX = 8
+    NODE_COUNT = RADIX ** DIMENSION
+    EDGE_COUNT_MIN = NODE_COUNT * DEGREE_AVERAGE / 3
     EDGE_COUNT_MAX = NODE_COUNT * DEGREE_AVERAGE / 2
     INITIAL_DATASET_SIZE = 100
     TARGET_NAMES = ['latency', 'power']
@@ -154,6 +155,9 @@ class Performer(object):
         return raw_features
     def set_radix(self, radix):
         self.RADIX = radix
+        self.NODE_COUNT = self.RADIX ** self.DIMENSION
+        self.EDGE_COUNT_MIN = self.NODE_COUNT * self.DEGREE_AVERAGE / 3
+        self.EDGE_COUNT_MAX = self.NODE_COUNT * self.DEGREE_AVERAGE / 2
     def self_initialize(self, benchmark):
         if (benchmark not in self.benchmarks):
             raise NameError('unknown benchmark: ' + benchmark)
@@ -202,17 +206,28 @@ class Performer(object):
             graph = gnm_random_graph(self.NODE_COUNT, edge_count)
             if self.constraints_satisfied(graph):
                 for node_index, data in graph.nodes(data=True):
-                    data['position'] = [node_index / self.RADIX, node_index % self.RADIX]
+                    data['id'] = node_index
+                    data['position'] = (node_index / self.RADIX, node_index % self.RADIX)
                     data['weight'] = self.NODE_WEIGHT
                 for source, destination, data in graph.edges(data=True):
                     data['weight'] = self.distance(graph, source, destination)
                 return graph
+    def generate_initial_graph(self):
+        graph = grid_2d_graph(self.RADIX, self.RADIX)
+        for node_index, data in graph.nodes(data=True):
+            data['id'] = node_index[0] * self.RADIX + node_index[1]
+            data['position'] = node_index
+            data['weight'] = self.NODE_WEIGHT
+        for source, destination, data in graph.edges(data=True):
+            data['weight'] = self.distance(graph, source, destination)
+        return graph
     def weighted_length(self, traffic, graph, weight):
         raw_path_lengths = shortest_path_length(graph, weight = weight)
         path_lengths = zeros((self.NODE_COUNT, self.NODE_COUNT))
         for source in raw_path_lengths:
             for destination in raw_path_lengths[source]:
-                path_lengths[source][destination] = raw_path_lengths[source][destination]
+                path_lengths[graph.node[source]['id']][graph.node[destination]['id']] = (
+                    raw_path_lengths[source][destination])
         averaged_traffic = tile(traffic, (self.NODE_COUNT,1))
         return average(path_lengths, weights = averaged_traffic)
     def get_edge_weight_histogram(self, graph):
@@ -330,9 +345,10 @@ class Actuator(object):
     def configure_topology(self, benchmark, graph):
         with open(performer.database[benchmark]['topology'], 'w+') as f:
             for source in graph:
-                connection = ['router', source, 'node', source]
+                connection = ['router', graph.node[source]['id'], 'node', graph.node[source]['id']]
                 for destination in graph[source]:
-                    connection += ['router', destination, graph[source][destination]['weight']-performer.NODE_WEIGHT]
+                    connection += ['router', graph.node[destination]['id'],
+                                   graph[source][destination]['weight'] - performer.NODE_WEIGHT]
                 f.write(' '.join(map(str, connection)) + '\n')
         return
     def evaluate_metrics(self, architecture, benchmark, graph = None):
@@ -401,9 +417,9 @@ class Actuator(object):
         print data.columns.values
         if quantity == 'trace':
             print 'quantity = ', quantity
-            axes = data.loc[100:,['real_latency_power_product', 'predicted_latency_power_product']].plot()
+            # axes = data.loc[100:,['real_latency_power_product', 'predicted_latency_power_product']].plot()
             # axes = data.loc[100:,['real_latency', 'predicted_latency']].plot()
-            # axes = data.loc[100:,['real_power', 'predicted_power']].plot()
+            axes = data.loc[100:,['real_power', 'predicted_power']].plot()
             axes.set_xlabel(benchmark + '_network_optimization_step')
         elif quantity == 'links':
             best_design = data.ix[data['real_latency_power_product'].idxmin()]
@@ -450,7 +466,7 @@ class Optimization(SearchProblem):
     # def generate_random_state(self):
     #     state = performer.generate_random_graph()
     #     return state
-optimization = Optimization(initial_state = performer.generate_random_graph())
+optimization = Optimization(initial_state = performer.generate_initial_graph())
 
 def initialize(benchmark):
     performer.self_initialize(benchmark)
@@ -460,14 +476,14 @@ def initialize(benchmark):
 
 def design(benchmark):
     performer.self_initialize(benchmark)
-    restarts = 10
+    restarts = 100
     iterations = 200
     for trial in range(restarts):
         print 'design:', 'benchmark =', performer.benchmark + ';',
         print 'optimization_target =', performer.optimization_target + ';',
         print 'trial =', trial
         performer.update_estimators(performer.database[performer.benchmark]['dataset'], 4)
-        final = hill_climbing_stochastic(optimization, 1, iterations)
+        final = simulated_annealing(optimization)
         design_instance = [datetime.now(), performer.benchmark, performer.optimization_target,
                            to_dict_of_dicts(final.state)]
         with open(performer.database[performer.benchmark]['design'], 'a') as f:
@@ -498,10 +514,10 @@ def summarize():
     results.to_csv(performer.stats['freenet'], sep = '\t', index = False)
     return
 if __name__ == '__main__':
-    # design('vips')
     pool = Pool(8)
-    # pool.map(design, performer.benchmarks)
+    pool.map(design, performer.benchmarks)
     # pool.map(analyze, performer.benchmarks)
+    # design('vips')
     # analyze('dedup')
     # performer.evaluate_mesh()
-    summarize()
+    # summarize()
