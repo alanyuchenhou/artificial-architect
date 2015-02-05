@@ -36,6 +36,7 @@
 *.jpg
 *.log
 *.dat
+*.tsv
 booksim2
 documents/*
 !documents/architect.tex
