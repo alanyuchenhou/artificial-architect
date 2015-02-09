@@ -62,7 +62,6 @@ from numpy import zeros
 from numpy import average
 from numpy import repeat
 from numpy import prod
-from numpy.linalg import norm
 from numpy import fill_diagonal
 from numpy import vstack
 from numpy import hstack
@@ -73,11 +72,14 @@ from numpy import logspace
 from numpy import linspace
 from numpy import squeeze
 from numpy import histogram
+from numpy.linalg import norm
+from numpy.random import rand
 from pandas import read_csv
 from pandas import DataFrame
 from matplotlib import use
 use('Agg')
 from matplotlib.pyplot import figure
+from matplotlib.pyplot import title
 from matplotlib.pyplot import savefig
 
 class Critic(object):
@@ -100,17 +102,21 @@ class Critic(object):
 
 class Performer(object):
     optimization_targets = ['latency', 'power', 'latency_power_product']
-    optimization_target = optimization_targets[0]
+    optimization_target = optimization_targets[1]
     benchmarks = ['bodytrack', 'canneal', 'dedup', 'fluidanimate', 'freqmine', 'swaption', 'vips']
     benchmark = None
     document_directory = 'documents/'
     tex = 'architect.tex'
-    database = {}
     stats = {'mesh': 'stats_mesh.tsv',
              'freenet': 'stats_freenet.tsv',
              'accuracy': 'estimation_accuracy.tsv'}
     configuration_template = {'mesh': 'booksim2/src/examples/mesh88_lat',
                               'freenet': 'booksim2/src/examples/anynet/anynet_config'}
+    image = {'latency': document_directory + 'latency',
+             'degree': document_directory + 'degree',
+             'average_hop_count': document_directory + 'average_hop_count',
+             'average_path_length': document_directory + 'average_path_length'}
+    database = {}
     for benchmark in benchmarks:
         entry = {}
         traffic = sum(loadtxt('traffic_' + benchmark + '.txt'))
@@ -125,19 +131,20 @@ class Performer(object):
         entry['dataset'] = 'dataset_' + benchmark + '.tsv'
         entry['design'] = 'design_' + benchmark + '.tsv'
         entry['design_mesh'] = 'design_mesh_' + benchmark + '.tsv'
-        entry['stats'] = 'stats_' + benchmark + '.tsv'
+        entry['stats_freenet'] = 'stats_' + benchmark + '.tsv'
         entry['stats_mesh'] = 'stats_mesh_' + benchmark + '.tsv'
         entry['trace'] = document_directory +'trace_' + benchmark + '.png'
         entry['links'] = document_directory +'links_' + benchmark + '.png'
         entry['result'] = document_directory +'result_' + benchmark + '.png'
+        entry['network_figure'] = document_directory +'network_' + benchmark + '.png'
         database[benchmark] = entry
-    injection_rate = 0.0005
-    packet_size = 64
+    injection_rate = 0.000001
+    packet_size = 32
     DIMENSION = 2
+    RADIX = 8
     NODE_WEIGHT = 4
     DEGREE_AVERAGE = 4
     DEGREE_MAX = 7
-    RADIX = 8
     NODE_COUNT = RADIX ** DIMENSION
     EDGE_COUNT_MIN = NODE_COUNT * DEGREE_AVERAGE / 3
     EDGE_COUNT_MAX = NODE_COUNT * DEGREE_AVERAGE / 2
@@ -190,11 +197,14 @@ class Performer(object):
             f.write('\t'.join(map(str, data_instance)) + '\n')
         self.estimators = estimators
         return
-    def distance(self, graph, source, destination):
-        distance = graph.node[source]['weight']
+    def link_length(self, graph, source, destination):
+        manhattan_distance = 0
         for i in range(self.DIMENSION):
-            distance += abs(graph.node[source]['position'][i] - graph.node[destination]['position'][i])
-        return distance
+            manhattan_distance += abs(graph.node[source]['position'][i] - graph.node[destination]['position'][i])
+        return manhattan_distance
+    def edge_weight(self, graph, source, destination):
+        weight = graph.node[source]['weight'] + self.link_length(graph, source, destination)
+        return weight
     def center(self, graph, source, destination):
         center = [source, destination]
         for i in range(self.DIMENSION):
@@ -213,7 +223,8 @@ class Performer(object):
             data['position'] = (node_key / self.RADIX, node_key % self.RADIX)
             data['weight'] = self.NODE_WEIGHT
         for source, destination, data in graph.edges(data=True):
-            data['weight'] = self.distance(graph, source, destination)
+            data['length'] = self.link_length(graph, source, destination)
+            data['weight'] = self.edge_weight(graph, source, destination)
         return
     def generate_random_graph(self):
         edge_count = uniform(self.EDGE_COUNT_MIN, self.EDGE_COUNT_MAX)
@@ -300,6 +311,8 @@ class Performer(object):
         return
     def string_to_graph(self, graph_string):
         return Graph(literal_eval(graph_string))
+    def get_network_figure(self, benchmark):
+        return self.database[benchmark]['network_figure']
     def get_targets(self, graph):
         return actuator.evaluate_metrics('freenet', self.benchmark, graph)
     def get_mesh_metrics(self, benchmark):
@@ -316,7 +329,7 @@ class Performer(object):
         stats_file = None
         if architecture == 'freenet':
             design_file = 'design'
-            stats_file = 'stats'
+            stats_file = 'stats_freenet'
         elif architecture == 'mesh':
             design_file = 'design_mesh'
             stats_file = 'stats_mesh'
@@ -345,14 +358,14 @@ class Performer(object):
         # pprint(shortest_path_length(graph))
         # pprint(shortest_path_length(graph, weight = 'weight'))
         return
-    def evaluate_mesh(self):
-        metrics = DataFrame({'benchmark': self.benchmarks})
-        print metrics
-        metrics['real_latency'], metrics['real_power'] = zip(*map(self.get_mesh_metrics, metrics['benchmark']))
-        metrics['real_latency_power_product'] = metrics['real_latency'] * metrics['real_power']
-        print metrics
-        metrics.to_csv(self.stats['mesh'], sep = '\t', index = False)
-        return
+    # def evaluate_mesh(self):
+    #     metrics = DataFrame({'benchmark': self.benchmarks})
+    #     print metrics
+    #     metrics['real_latency'], metrics['real_power'] = zip(*map(self.get_mesh_metrics, metrics['benchmark']))
+    #     metrics['real_latency_power_product'] = metrics['real_latency'] * metrics['real_power']
+    #     print metrics
+    #     metrics.to_csv(self.stats['mesh'], sep = '\t', index = False)
+    #     return
 performer = Performer()
 
 class Sensor(object):
@@ -396,11 +409,15 @@ class Actuator(object):
         with open(performer.database[benchmark]['dataset'], 'w+') as f:
             f.write('\t'.join(map(str, columns)) + '\n')
         return
-    def initialize_design_file(self, benchmark):
+    def initialize_freenet_design(self, benchmark):
         columns = ['time', 'benchmark', 'optimization_target', 'topology']
-        for design_file in ['design', 'design_mesh']:
-            with open(performer.database[benchmark][design_file], 'w+') as f:
-                f.write('\t'.join(map(str, columns)) + '\n')
+        with open(performer.database[benchmark]['design'], 'w+') as f:
+            f.write('\t'.join(map(str, columns)) + '\n')
+        return
+    def initialize_mesh_design(self, benchmark):
+        columns = ['time', 'benchmark', 'optimization_target', 'topology']
+        with open(performer.database[benchmark]['design_mesh'], 'w+') as f:
+            f.write('\t'.join(map(str, columns)) + '\n')
         return
     def initialize_accuracy_file(self, benchmark):
         columns = [datetime.now(), benchmark, 'latency_accuracy', 'power_accuracy']
@@ -428,23 +445,30 @@ class Actuator(object):
                 print line.replace(line, 'packet_size = ' + str(performer.packet_size) + ';')
             elif line.startswith('injection_rate ='):
                 print line.replace(line, 'injection_rate = ' + str(performer.injection_rate) + ';')
+            elif line.startswith('routing_delay  = '):
+                print line.replace(line, 'routing_delay  = ' + str(performer.NODE_WEIGHT) + ';')
             else:
                 print line.replace(line, line),
         return
     def initialize_files(self):
         self.initialize_accuracy_file(performer.benchmark)
+        self.initialize_mesh_design(performer.benchmark)
+        self.initialize_freenet_design(performer.benchmark)
         self.initialize_dataset_file(performer.benchmark)
-        self.initialize_design_file(performer.benchmark)
         for architecture in performer.configuration_template:
             self.initialize_configuration_file(performer.benchmark, architecture)
         return
-    def draw_graph(graph):
+    def draw_graph(self, benchmark, graph_string, network_figure):
+        figure()
+        title(benchmark)
+        graph = performer.string_to_graph(graph_string)
+        performer.process_graph(graph)
         draw(graph, get_node_attributes(graph, 'position'), hold = True)
-        draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
-        savefig(temp.png)
+        # draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
+        savefig(network_figure)
         return
     def visualize(self, benchmark, quantity):
-        data_file = 'dataset' if quantity == 'trace' else 'stats'
+        data_file = 'dataset' if quantity == 'trace' else 'stats_freenet'
         axes = None
         figure()
         data = read_csv(performer.database[benchmark][data_file], sep = '\t', skipinitialspace = True)
@@ -486,7 +510,7 @@ class Optimization(SearchProblem):
                     successor.remove_edge(node_pair[0],node_pair[1])
                 else:
                     successor.add_edge(node_pair[0], node_pair[1],
-                                       weight = performer.distance(state, node_pair[0], node_pair[1]))
+                                       weight = performer.edge_weight(state, node_pair[0], node_pair[1]))
             if performer.constraints_satisfied(successor):
                 successors.append(successor)
         return successors
@@ -535,44 +559,61 @@ def analyze(benchmark):
 def evaluate_mesh():
     for benchmark in performer.benchmarks:
         performer.self_initialize(benchmark)
-        # performer.generate_design_mesh()
+        performer.generate_design_mesh()
         performer.analyze_designs('mesh')
     return
 
-def summarize(architecture):
-    design_file = None
-    stats_file = None
-    metrics = None
-    full_metrics = ['real_latency', 'real_power', 'real_latency_power_product']
-    if architecture == 'freenet':
-        stats_file = 'stats'
-        metrics = full_metrics
-    elif architecture == 'mesh':
-        stats_file = 'stats_mesh'
-        metrics = ['real_power']
-    results = DataFrame()
-    for benchmark in performer.benchmarks:
-        data = read_csv(performer.database[benchmark][stats_file], sep = '\t', skipinitialspace = True)
-        partial_results = data.ix[data[metrics].idxmin()]
-        results = results.append(partial_results, ignore_index = True)
-    print results.columns.values
-    interests = ['benchmark', 'degree_average', 'degree_max', 'path_length', 'degree_norm', 'edge_count']
-    print results[interests + metrics]
-    data = read_csv(performer.stats['mesh'], sep = '\t', skipinitialspace = True)
-    print data[interests + full_metrics]
-    results.to_csv(performer.stats[architecture], sep = '\t', index = False)
+def visualize(dataframe, figure, ylabel):
+    print dataframe
+    axis = dataframe.plot()
+    axis.set_ylabel(ylabel)
+    axis.get_figure().savefig(figure)
+    # axis = visual.plot(kind = 'bar')
     return
+
+def compare(dataframe, index, columns, values, figure_file):
+    feature = dataframe[[index, columns, values]]
+    print feature
+    feature = feature.pivot(index, columns, values)
+    visualize(feature, figure_file, values)
+    return
+
+def summarize(metrics):
+    full_metrics = ['real_latency', 'real_power', 'real_latency_power_product']
+    results = DataFrame()
+    for architecture in ['mesh', 'freenet']:
+        stats_file = 'stats_' + architecture
+        for benchmark in performer.benchmarks:
+            data = read_csv(performer.database[benchmark][stats_file], sep = '\t', skipinitialspace = True)
+            record = data.ix[data[metrics].idxmin()]
+            record.insert(1, 'architecture', architecture)
+            results = results.append(record, ignore_index = True)
+    results['weight'] = 'weight'
+    results['graph'] = map(performer.string_to_graph, results['topology'])
+    results['average_hop_count'] = map(average_shortest_path_length, results['graph'])
+    results['average_path_length'] = results['path_length']*4/9
+    results.to_csv(performer.stats[architecture], sep = '\t', index = False)
+    print results.columns.values
+    
+    degree = results[results['architecture'] == 'freenet'][['benchmark', 'degree_average', 'degree_max']]
+    degree.set_index('benchmark', inplace = True)
+    visualize(degree, performer.image['degree'], 'degree')
+
+    edge_weight = results[results['architecture'] == 'freenet'][['benchmark','edge_weight_distribution']]
+    compare(results, 'benchmark', 'architecture', 'average_path_length', performer.image['average_path_length'])
+    compare(results, 'benchmark', 'architecture', 'real_latency', performer.image['latency'])
+    compare(results, 'benchmark', 'architecture', 'average_hop_count', performer.image['average_hop_count'])
+
+    # results['network_figure'] = map(performer.get_network_figure, results['benchmark'])
+    # freenet_topologies = results[results['architecture'] == 'freenet']
+    # map(actuator.draw_graph, freenet_topologies['benchmark'],
+    #     freenet_topologies['topology'], freenet_topologies['network_figure'])
+    return
+
 if __name__ == '__main__':
     pool = Pool(8)
-    # design('vips')
+    # pool.map(initialize, performer.benchmarks)
     pool.map(design, performer.benchmarks)
     # pool.map(analyze, performer.benchmarks)
-    # pool.map(initialize, performer.benchmarks)
     # evaluate_mesh()
-    # initialize('vips')
-    # analyze('dedup')
-    # performer.evaluate_mesh()
-    # summarize('mesh')
-    # performer.set_radix(3)
-    # graph = performer.generate_initial_graph()
-    # pprint (to_dict_of_dicts(graph))
+    # summarize(['power'])
