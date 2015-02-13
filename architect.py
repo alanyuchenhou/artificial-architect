@@ -75,6 +75,7 @@ from numpy.linalg import norm
 from numpy.random import rand
 from pandas import read_csv
 from pandas import DataFrame
+from pandas import Series
 from matplotlib import use
 use('Agg')
 from matplotlib.pyplot import figure
@@ -203,8 +204,8 @@ class Performer(object):
             manhattan_distance += abs(graph.node[source]['position'][i] - graph.node[destination]['position'][i])
         weight = manhattan_distance + self.NODE_WEIGHT
         return weight
-    def link_length(self, graph, source, destination):
-        length = graph[source][destination]['weight'] - self.NODE_WEIGHT
+    def link_length(self, edge_weight):
+        length = edge_weight - self.NODE_WEIGHT
         return length
     def center(self, graph, source, destination):
         center = [source, destination]
@@ -212,7 +213,7 @@ class Performer(object):
             center[i] = .5*(graph.node[source]['position'][i] + graph.node[destination]['position'][i])
         return center
     def constraints_satisfied(self, graph):
-        degrees = self.get_degrees(graph)
+        degrees = graph.degree().values()
         degree_average = average(degrees)
         degree_max = max(degrees)
         if degree_average <= self.DEGREE_AVERAGE and degree_max <= self.DEGREE_MAX and is_strongly_connected(graph):
@@ -221,11 +222,11 @@ class Performer(object):
             return False
     def process_graph(self, graph):
         graph.remove_edges_from(graph.selfloop_edges())
-        for node_key, data in graph.nodes(data=True):
-            data['position'] = (node_key / self.RADIX, node_key % self.RADIX)
-            data['weight'] = self.NODE_WEIGHT
-        for source, destination, data in graph.edges(data=True):
-            data['weight'] = self.edge_weight(graph, source, destination)
+        for node_key, node_attributes in graph.nodes(data=True):
+            node_attributes['position'] = (node_key / self.RADIX, node_key % self.RADIX)
+            node_attributes['weight'] = self.NODE_WEIGHT
+        for source, destination, edge_attributes in graph.edges(data=True):
+            edge_attributes['weight'] = self.edge_weight(graph, source, destination)
         return
     # def generate_random_graph(self):
     #     edge_count = uniform(self.EDGE_COUNT_MIN, self.EDGE_COUNT_MAX)
@@ -309,40 +310,27 @@ class Performer(object):
         graph = Graph(literal_eval(graph_string))
         performer.process_graph(graph)
         return graph
-    def get_network_figure(self, benchmark):
-        return self.file_name('network_figure', benchmark)
-    def get_path_length(self, graph):
-        return self.weighted_length(self.traffic[self.benchmark], graph, 'weight')
-    def get_degrees(self, graph):
-        return graph.degree().values()
-    def get_degrees_norm(self, degrees):
-        return norm(degrees)**2
-    def get_link_lengths(self, graph):
-        link_lengths=[]
-        for source, destination, data in graph.edges(data = True):
-            link_length = performer.link_length(graph, source, destination)
-            link_lengths.append(link_length)
-        return link_lengths
     def analyze_designs(self):
         print 'performer: analyze_designs: ' + self.benchmark + ';'
-        design_file = None
-        final = read_csv(self.file_name('design', self.benchmark), sep = '\t', skipinitialspace = True)
-        final['graph'] = map(self.string_to_graph, final['topology'])
-        final['hop_count'] = map(average_shortest_path_length, final['graph'])
-        final['path_length'] = map(self.get_path_length, final['graph'])
-        final['diameter'] = map(diameter, final['graph'])
-        final['radius'] = map(radius, final['graph'])
-        # final['real_latency'], final['real_power'] = zip(*map(actuator.evaluate_metrics, final['graph']))
-        final['latency_power_product'] = map(mul, final['latency'], final['power'])
-        final['edge_count'] = map(number_of_edges, final['graph'])
-        final['link_lengths'] = map(self.get_link_lengths, final['graph'])
-        final['degrees'] = map(self.get_degrees, final['graph'])
-        final['degree_average'] = map(average, final['degrees'])
-        final['degree_max'] = map(max, final['degrees'])
-        final['degree_min'] = map(min, final['degrees'])
-        final['degree_norm'] = map(self.get_degrees_norm, final['degrees'])
-        final['network_figure'] = map(self.get_network_figure, final['benchmark'])
-        final.to_csv(performer.file_name('stats', self.benchmark), sep = '\t', index = False)
+        network = read_csv(self.file_name('design', self.benchmark), sep = '\t', skipinitialspace = True)
+        # print network.head()
+        network['graph'] = [self.string_to_graph(t) for t in network['topology']]
+        network['hop_count'] = [average_shortest_path_length(g) for g in network['graph']]
+        network['path_length'] = [average_shortest_path_length(g, 'weight') for g in network['graph']]
+        network['diameter'] = [diameter(g) for g in network['graph']]
+        network['radius'] = [radius(g) for g in network['graph']]
+        network['latency_power_product'] = network['latency'] * network['power']
+        network['edge_count'] = [number_of_edges(g) for g in network['graph']]
+        network['edge_weights'] = [get_edge_attributes(g, 'weight').values() for g in network['graph']]
+        network['link_lengths'] = [[self.link_length(e) for e in es] for es in network['edge_weights']]
+        network['degrees'] = [g.degree().values() for g in network['graph']]
+        network['degree_average'] = [average(d) for d in network['degrees']]
+        network['degree_max'] = [max(d) for d in network['degrees']]
+        network['degree_min'] = [min(d) for d in network['degrees']]
+        network['degree_norm'] = [norm(d)**2 for d in network['degrees']]
+        network['network_figure'] = [self.file_name('network_figure', b) for b in network['benchmark']]
+        # print network.tail()
+        network.to_csv(performer.file_name('stats', self.benchmark), sep = '\t', index = False)
         return
 performer = Performer()
 
@@ -365,7 +353,8 @@ class Actuator(object):
             for source in graph:
                 connection = ['router', source, 'node', source]
                 for destination in graph[source]:
-                    connection += ['router', destination, performer.link_length(graph, source, destination)]
+                    length = performer.link_length(graph[source][destination]['weight'])
+                    connection += ['router', destination, length]
                 f.write(' '.join(map(str, connection)) + '\n')
         return
     def evaluate_metrics(self, graph):
@@ -523,7 +512,8 @@ def summarize(metrics, benchmarks):
     for benchmark in benchmarks:
         print 'summarize :', benchmark
         data = read_csv(performer.file_name('stats', benchmark), sep = '\t', skipinitialspace = True)
-        for architecture in ['mesh', 'scale_free', 'freenet']:
+        # for architecture in ['mesh', 'scale_free', 'freenet']:
+        for architecture in ['mesh', 'small_world', 'freenet']:
             architecture_data = data[data['architecture'] == architecture]
             record = architecture_data.ix[architecture_data[metrics].idxmin()]
             results = results.append(record, ignore_index = True)
@@ -553,16 +543,16 @@ def summarize(metrics, benchmarks):
 if __name__ == '__main__':
     performer.initialize_optimization_target('power')
     pool = Pool(8)
-    pool.map(initialize, performer.benchmarks)
-    pool.map(design_mesh, performer.benchmarks)
-    pool.map(design_scale_free, performer.benchmarks)
-    pool.map(design_freenet, performer.benchmarks)
-    pool.map(analyze, performer.benchmarks)
+    # pool.map(initialize, performer.benchmarks)
+    # pool.map(design_mesh, performer.benchmarks)
+    # pool.map(design_scale_free, performer.benchmarks)
+    # pool.map(design_freenet, performer.benchmarks)
+    # pool.map(analyze, performer.benchmarks)
     # initialize('fft')
     # design_mesh('fft')
     # design_scale_free('fft')
     # design_freenet('fft')
-    # analyze('fft')
+    analyze('fft')
     summarize(['power'], performer.benchmarks)
     # graph = performer.generate_scale_free_graph()
     # pprint(graph.nodes(data = True))
