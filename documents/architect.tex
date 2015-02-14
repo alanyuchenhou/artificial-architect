@@ -31,46 +31,87 @@
 %% \end{abstract}
 
 \section{Finished steps}
-\subsection{Performance for different traffic patterns}
 \begin{figure}[htb]
   \centering
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_bodytrack.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_canneal.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_dedup.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_fluidanimate.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_freqmine.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_swaption.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=\textwidth]{average_hop_count}} \end{subfigure}
   \rule{\linewidth}{1pt}
-  \caption{Trace}
-  \label{fig:trace}
+  \caption{average hop count}
+  \label{fig:average_hop_count}
 \end{figure}
 \begin{figure}[htb]
   \centering
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_bodytrack.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_canneal.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_dedup.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_fluidanimate.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_freqmine.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_swaption.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=\textwidth]{average_path_length.png}} \end{subfigure}
   \rule{\linewidth}{1pt}
-  \caption{Result}
-  \label{fig:result}
+  \caption{average path length}
+  \label{fig:average_path_length}
+\end{figure}
+\begin{figure}[htb]
+  \centering
+  \begin{subfigure} {\includegraphics[width=\textwidth]{latency.png}} \end{subfigure}
+  \rule{\linewidth}{1pt}
+  \caption{latency}
+  \label{fig:latency}
+\end{figure}
+\begin{figure}[htb]
+  \centering
+  \begin{subfigure} {\includegraphics[width=\textwidth]{degree.png}} \end{subfigure}
+  \rule{\linewidth}{1pt}
+  \caption{degree}
+  \label{fig:degree}
 \end{figure}
 
-\subsection{Link cost distribution}
-Figure \ref{fig:links} shows the link weight distributions.
 \begin{figure}[htb]
   \centering
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_bodytrack.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_canneal.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_dedup.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_fluidanimate.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_freqmine.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_swaption.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{network_bodytrack.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{network_canneal.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{network_dedup.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{network_fluidanimate.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{network_freqmine.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width=.4\textwidth]{network_swaption.png}} \end{subfigure}
   \rule{\linewidth}{1pt}
-  \caption{Link weight distribution for different networks}
-  \label{fig:links}
+  \caption{Network}
+  \label{fig:network}
 \end{figure}
+
+%% \begin{figure}[htb]
+%%   \centering
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_bodytrack.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_canneal.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_dedup.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_fluidanimate.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_freqmine.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{trace_swaption.png}} \end{subfigure}
+%%   \rule{\linewidth}{1pt}
+%%   \caption{Trace}
+%%   \label{fig:trace}
+%% \end{figure}
+
+%% \begin{figure}[htb]
+%%   \centering
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_bodytrack.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_canneal.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_dedup.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_fluidanimate.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_freqmine.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{result_swaption.png}} \end{subfigure}
+%%   \rule{\linewidth}{1pt}
+%%   \caption{Result}
+%%   \label{fig:result}
+%% \end{figure}
+
+%% \begin{figure}[htb]
+%%   \centering
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_bodytrack.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_canneal.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_dedup.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_fluidanimate.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_freqmine.png}} \end{subfigure}
+%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{links_swaption.png}} \end{subfigure}
+%%   \rule{\linewidth}{1pt}
+%%   \caption{Link weight distribution for different networks}
+%%   \label{fig:links}
+%% \end{figure}
+
 %% \subsection{Basic hill climbing}
 %% In this basic test is a single hill climbing search. It started from a randomly generated design and reached a local optimum. The neighborhood radius in this test is 2. The design features and scores were logged in every search step, which is shown in Figure \ref{fig:trace}. This result suggests the searching is operational - under the guidance of the objective function, the search finds designs with better and better design scores.
 %% \begin{figure}[htb]
