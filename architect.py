@@ -103,7 +103,7 @@ class Critic(object):
 class Performer(object):
     architectures = ['mesh', 'scale_free', 'freenet']
     # benchmarks = ['bodytrack', 'canneal', 'dedup', 'fluidanimate', 'freqmine', 'swaption', 'vips']
-    benchmarks = ['fft', 'canneal', 'lu', 'radix']
+    benchmarks = ['fft', 'lu', 'radix', 'water', 'canneal', 'dedup', 'fluidanimate', 'vips']
     benchmark = None
     optimization_targets = ['latency', 'power', 'latency_power_product']
     optimization_target = None
@@ -118,8 +118,7 @@ class Performer(object):
         traffic[benchmark] = hotspot
     injection_rate = 0.00001
     packet_size = 48
-    routing_delay = 3
-    NODE_WEIGHT = routing_delay + 3
+    NODE_WEIGHT = 3
     DIMENSION = 2
     RADIX = 8
     DEGREE_AVERAGE = 5
@@ -141,7 +140,7 @@ class Performer(object):
             temp_name = quantity
             if quantity in ['latency', 'degree', 'average_hop_count', 'average_path_length']:
                 file_name = self.document_directory + temp_name
-            elif quantity in ['result', 'accuracy']:
+            elif quantity in ['accuracy']:
                 file_name = temp_name + '.tsv'
         else:
             temp_name = quantity + '_' + benchmark
@@ -381,7 +380,7 @@ class Actuator(object):
             elif line.startswith('injection_rate ='):
                 print line.replace(line, 'injection_rate = ' + str(performer.injection_rate) + ';')
             elif line.startswith('routing_delay  = '):
-                print line.replace(line, 'routing_delay  = ' + str(performer.routing_delay) + ';')
+                print line.replace(line, 'routing_delay  = ' + str(performer.NODE_WEIGHT) + ';')
             elif line.startswith('network_file ='):
                 print line.replace(line, 'network_file = '+performer.file_name('topology', performer.benchmark)+';')
             elif line.startswith('traffic ='):
@@ -484,26 +483,32 @@ def analyze():
     results = DataFrame()
     for benchmark in performer.benchmarks:
         data = read_csv(performer.file_name('design', benchmark), sep = '\t', skipinitialspace = True)
-        # for architecture in ['mesh', 'scale_free', 'freenet']:
-        for architecture in ['mesh', 'small_world', 'freenet']:
+        for architecture in ['mesh', 'scale_free', 'freenet']:
             architecture_data = data[data['architecture'] == architecture]
             record = architecture_data.ix[architecture_data[metrics].idxmin()]
             results = results.append(record, ignore_index = True)
     # ################################################################
     # print results.head()
     results['graph'] = [performer.string_to_graph(t) for t in results['topology']]
-    results['hop_count'] = [average_shortest_path_length(g) for g in results['graph']]
-    results['path_length'] = [average_shortest_path_length(g, 'weight') for g in results['graph']]
-    results['diameter'] = [diameter(g) for g in results['graph']]
-    results['radius'] = [radius(g) for g in results['graph']]
     results['latency_power_product'] = results['latency'] * results['power']
     results['edge_count'] = [number_of_edges(g) for g in results['graph']]
-    results['edge_weights'] = [get_edge_attributes(g, 'weight').values() for g in results['graph']]
-    results['link_lengths'] = [[performer.link_length(e) for e in es] for es in results['edge_weights']]
+    results['diameter'] = [diameter(g) for g in results['graph']]
+    results['radius'] = [radius(g) for g in results['graph']]
+    results['path_lengths'] = [[length for d in shortest_path_length(g, weight = 'weight').values()
+                                for length in d.values()] for g in results['graph']]
+    results['path_length_average'] = [average(h) for h in results['path_lengths']]
+    results['path_length_max'] = [max(h) for h in results['path_lengths']]
+    results['hop_counts'] = [[length for d in shortest_path_length(g).values()
+                              for length in d.values()] for g in results['graph']]
+    results['hop_count_average'] = [average(h) for h in results['hop_counts']]
+    results['hop_count_max'] = [max(h) for h in results['hop_counts']]
+    results['link_lengths'] = [[performer.link_length(w) for w in get_edge_attributes(g, 'weight').values()]
+                               for g in results['graph']]
+    results['link_length_average'] = [average(h) for h in results['link_lengths']]
+    results['link_length_max'] = [max(h) for h in results['link_lengths']]
     results['degrees'] = [g.degree().values() for g in results['graph']]
     results['degree_average'] = [average(d) for d in results['degrees']]
     results['degree_max'] = [max(d) for d in results['degrees']]
-    results['degree_min'] = [min(d) for d in results['degrees']]
     results['degree_norm'] = [norm(d)**2 for d in results['degrees']]
     results['network_figure'] = [performer.file_name('network_figure', b) for b in results['benchmark']]
     results['weight'] = 'weight'
@@ -511,9 +516,8 @@ def analyze():
     # print results.tail()
     # ################################################################
     results.sort('energy', inplace = True)
-    results.to_csv(performer.file_name('result'), sep = '\t', index = False)
     print 'analyze :', results.columns.values
-    attributes = ['architecture', 'benchmark', 'latency', 'energy']
+    attributes = ['architecture', 'benchmark', 'latency', 'energy', 'hop_count_average', 'hop_count_max', 'path_length_average', 'path_length_max', 'link_length_average', 'link_length_max']
     print results[attributes]
 
     # degree = results[results['architecture'] == 'freenet'][['benchmark', 'degree_average', 'degree_max']]
@@ -545,4 +549,3 @@ if __name__ == '__main__':
     # graph = performer.generate_scale_free_graph()
     # pprint(graph.nodes(data = True))
     # pprint(graph.edges(data = True))
-    
