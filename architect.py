@@ -58,6 +58,7 @@ from numpy import savetxt
 from numpy import delete
 from numpy import arange
 from numpy import asarray
+from numpy import histogram
 from numpy import zeros
 from numpy import average
 from numpy import repeat
@@ -76,6 +77,7 @@ from numpy.random import rand
 from pandas import read_csv
 from pandas import DataFrame
 from pandas import Series
+from pandas import concat
 from matplotlib import use
 use('Agg')
 from matplotlib.pyplot import figure
@@ -101,7 +103,7 @@ class Critic(object):
         return
 
 class Performer(object):
-    architectures = ['mesh', 'scale_free', 'freenet']
+    architectures = ['mesh', 'small_world', 'freenet']
     # benchmarks = ['bodytrack', 'canneal', 'dedup', 'fluidanimate', 'freqmine', 'swaption', 'vips']
     benchmarks = ['fft', 'lu', 'radix', 'water', 'canneal', 'dedup', 'fluidanimate', 'vips']
     benchmark = None
@@ -138,7 +140,9 @@ class Performer(object):
     def file_name(self, quantity, benchmark = None):
         if benchmark == None:
             temp_name = quantity
-            if quantity in ['latency', 'degree', 'average_hop_count', 'average_path_length']:
+            if quantity in ['latency', 'energy', 'latency_energy_product', 'hop_count_average',
+                            'path_length_average', 'link_length_average', 'hop_counts', 'path_lengths',
+                            'link_lengths']:
                 file_name = self.document_directory + temp_name
             elif quantity in ['accuracy']:
                 file_name = temp_name + '.tsv'
@@ -152,10 +156,9 @@ class Performer(object):
                 file_name = temp_name + '.tsv'
             elif quantity in ['simulation']:
                 file_name = temp_name + '.log'
-        if file_name == None:
-            raise NameError('no file for quantity: ' + quantity)
-        else:
-            return file_name
+            else:
+                raise NameError('no file for quantity: ' + quantity)
+        return file_name
     def extract_features(self, benchmark, graph):
         raw_features = [number_of_edges(graph),
                         self.weighted_length(performer.traffic[benchmark], graph, 'weight'),
@@ -246,7 +249,7 @@ class Performer(object):
         graph = connected_watts_strogatz_graph(self.NODE_COUNT, self.DEGREE_AVERAGE, uniform(0.1, 0.9))
         self.process_graph(graph)
         return graph
-    def generate_scale_free_graph(self):
+    def generate_small_world_graph(self):
         while True:
             tuple_keyed_graph = navigable_small_world_graph(self.RADIX)
             graph = relabel_nodes(tuple_keyed_graph, self.key_mapping)
@@ -403,18 +406,30 @@ class Actuator(object):
         # draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
         savefig(network_figure)
         return
-    def visualize(self, dataframe, figure, ylabel):
+    def visualize(self, dataframe, values):
         print dataframe
-        # axis = dataframe[['real_latency_power_product']].plot(kind = 'hist')
         axis = dataframe.plot()
-        axis.set_ylabel(ylabel)
-        axis.get_figure().savefig(figure)
+        axis.set_ylabel(values)
+        axis.get_figure().savefig(performer.file_name(values))
         return
-    def compare(self, dataframe, index, columns, values, figure_file):
+    def compare(self, dataframe, index, columns, values):
         feature = dataframe[[index, columns, values]]
         print feature
         feature = feature.pivot(index, columns, values)
-        actuator.visualize(feature, figure_file, values)
+        actuator.visualize(feature, values)
+        return
+    def plot_histogram(self, dataframe, column, value):
+        figure()
+        print dataframe[[column, value]]
+        distributions = DataFrame()
+        for index1, row in dataframe.iterrows():
+            bin_count = max(row[value]) + 3
+            print bin_count
+            new_column = DataFrame({row[column]: Series(histogram(row[value], bins = range(bin_count))[0])})
+            distributions = concat([distributions, new_column], axis = 1)
+        axis = distributions.plot()
+        axis.set_xlabel(value)
+        axis.get_figure().savefig(performer.file_name(value))
         return
 actuator = Actuator()
 
@@ -457,17 +472,17 @@ def design_freenet(benchmark):
         print 'design_freenet:', 'benchmark =', performer.benchmark + ';',
         print 'trial =', trial
         performer.update_estimators(4)
-        optimization = Optimization(initial_state = performer.generate_scale_free_graph())
+        optimization = Optimization(initial_state = performer.generate_small_world_graph())
         final = hill_climbing(optimization, iterations_limit = iterations)
         graph = final.state
         actuator.add_design_instance('freenet', graph)
     return
 
-def design_scale_free(benchmark):
+def design_small_world(benchmark):
     performer.initialize_benchmark(benchmark)
-    print 'design_scale_free: ' + performer.benchmark
-    graph = performer.generate_scale_free_graph()
-    actuator.add_design_instance('scale_free', graph)
+    print 'design_small_world: ' + performer.benchmark
+    graph = performer.generate_small_world_graph()
+    actuator.add_design_instance('small_world', graph)
     return
 
 def design_mesh(benchmark):
@@ -483,17 +498,14 @@ def analyze():
     results = DataFrame()
     for benchmark in performer.benchmarks:
         data = read_csv(performer.file_name('design', benchmark), sep = '\t', skipinitialspace = True)
-        for architecture in ['mesh', 'scale_free', 'freenet']:
+        for architecture in ['mesh', 'small_world', 'freenet']:
             architecture_data = data[data['architecture'] == architecture]
             record = architecture_data.ix[architecture_data[metrics].idxmin()]
             results = results.append(record, ignore_index = True)
-    # ################################################################
-    # print results.head()
     results['graph'] = [performer.string_to_graph(t) for t in results['topology']]
-    results['latency_power_product'] = results['latency'] * results['power']
+    results['energy'] = results['power'] * 7.511e-8
+    results['latency_energy_product'] = results['latency'] * results['energy']
     results['edge_count'] = [number_of_edges(g) for g in results['graph']]
-    results['diameter'] = [diameter(g) for g in results['graph']]
-    results['radius'] = [radius(g) for g in results['graph']]
     results['path_lengths'] = [[length for d in shortest_path_length(g, weight = 'weight').values()
                                 for length in d.values()] for g in results['graph']]
     results['path_length_average'] = [average(h) for h in results['path_lengths']]
@@ -502,6 +514,8 @@ def analyze():
                               for length in d.values()] for g in results['graph']]
     results['hop_count_average'] = [average(h) for h in results['hop_counts']]
     results['hop_count_max'] = [max(h) for h in results['hop_counts']]
+    results['diameter'] = [diameter(g) for g in results['graph']]
+    results['radius'] = [radius(g) for g in results['graph']]
     results['link_lengths'] = [[performer.link_length(w) for w in get_edge_attributes(g, 'weight').values()]
                                for g in results['graph']]
     results['link_length_average'] = [average(h) for h in results['link_lengths']]
@@ -511,41 +525,36 @@ def analyze():
     results['degree_max'] = [max(d) for d in results['degrees']]
     results['degree_norm'] = [norm(d)**2 for d in results['degrees']]
     results['network_figure'] = [performer.file_name('network_figure', b) for b in results['benchmark']]
-    results['weight'] = 'weight'
-    results['energy'] = results['power'] * 7.511e-8
-    # print results.tail()
-    # ################################################################
-    results.sort('energy', inplace = True)
+    results['architecture/benchmark'] = results['architecture'] + '/' + results['benchmark']
+    # results.sort('energy', inplace = True)
     print 'analyze :', results.columns.values
-    attributes = ['architecture', 'benchmark', 'latency', 'energy', 'hop_count_average', 'hop_count_max', 'path_length_average', 'path_length_max', 'link_length_average', 'link_length_max']
-    print results[attributes]
-
-    # degree = results[results['architecture'] == 'freenet'][['benchmark', 'degree_average', 'degree_max']]
-    # degree.set_index('benchmark', inplace = True)
-    # actuator.visualize(degree, performer.file_name('degree'), 'degree')
-
-    # link_lengths = results[results['architecture'] == 'freenet'][['benchmark','link_lengths']]
-    # actuator.compare(results, 'benchmark', 'architecture', 'path_length', performer.file_name('average_path_length'))
-    # actuator.compare(results, 'benchmark', 'architecture', 'latency', performer.file_name('latency'))
-    # actuator.compare(results, 'benchmark', 'architecture', 'hop_count', performer.file_name('average_hop_count'))
-
+    attributes = ['path_lengths', 'hop_counts', 'link_lengths']
+    mask = (results['benchmark'] == 'fft') & (results['architecture'] == 'mesh')
+    mask = (results['architecture'] == 'freenet')
+    mask = (results['benchmark'] == 'fft')
+    for attribute in attributes:
+        actuator.plot_histogram(results[mask], 'architecture/benchmark', attribute)
+    # attributes = ['latency', 'energy', 'latency_energy_product', 'path_length_average', 'hop_count_average',
+    #               'link_length_average']
+    # for attribute in attributes:
+    #     actuator.compare(results, 'benchmark', 'architecture', attribute)
     # freenet_topologies = results[results['architecture'] == 'freenet']
     # map(actuator.draw_graph, freenet_topologies['benchmark'],
     #     freenet_topologies['topology'], freenet_topologies['network_figure'])
     return
 
 if __name__ == '__main__':
-    performer.initialize_optimization_target('power')
-    pool = Pool(8)
+    # performer.initialize_optimization_target('power')
+    # pool = Pool(8)
     # pool.map(initialize, performer.benchmarks)
     # pool.map(design_mesh, performer.benchmarks)
-    # pool.map(design_scale_free, performer.benchmarks)
+    # pool.map(design_small_world, performer.benchmarks)
     # pool.map(design_freenet, performer.benchmarks)
     # initialize('fft')
     # design_mesh('fft')
-    # design_scale_free('fft')
+    # design_small_world('fft')
     # design_freenet('fft')
     analyze()
-    # graph = performer.generate_scale_free_graph()
+    # graph = performer.generate_small_world_graph()
     # pprint(graph.nodes(data = True))
     # pprint(graph.edges(data = True))
