@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+# simulation defficiency: power calculation inaccurate, uniform link length
+# task += booksim2/src/examples/anynet/anynet_config: sample_period
+# task += generate_navigable_small_world_graph
 from multiprocessing import Pool
 from shutil import copyfile
 from ast import literal_eval
@@ -12,6 +15,7 @@ from itertools import combinations
 from functools import reduce
 from operator import mul
 from random import uniform
+from random import choice
 from shlex import split
 from time import strftime
 from datetime import datetime
@@ -29,6 +33,7 @@ from sklearn.grid_search import GridSearchCV
 from sklearn.preprocessing import scale
 from sklearn.preprocessing import StandardScaler
 from networkx import Graph
+from networkx import DiGraph
 from networkx import relabel_nodes
 from networkx import nodes
 from networkx import get_node_attributes
@@ -53,6 +58,7 @@ from networkx import to_edgelist
 from networkx import shortest_path
 from networkx import shortest_path_length
 from networkx import average_shortest_path_length
+from networkx import average_clustering
 from numpy import loadtxt
 from numpy import savetxt
 from numpy import delete
@@ -123,8 +129,8 @@ class Performer(object):
     NODE_WEIGHT = 3
     DIMENSION = 2
     RADIX = 8
-    DEGREE_AVERAGE = 5
-    DEGREE_MAX = 7
+    DEGREE_AVERAGE = 12
+    DEGREE_MAX = 16
     NODE_COUNT = RADIX ** DIMENSION
     EDGE_COUNT_MIN = NODE_COUNT * DEGREE_AVERAGE / 3
     EDGE_COUNT_MAX = NODE_COUNT * DEGREE_AVERAGE / 2
@@ -132,7 +138,7 @@ class Performer(object):
     TARGET_NAMES = ['latency', 'power']
     TARGET_TOKENS = ['Packet latency average = ',  '- Channel Wire Power:      ']
     TARGET_COUNT = len(TARGET_NAMES)
-    FEATURE_NAMES = ['edge_count', 'path_length', 'diameter', 'radius', 'degree_norm']
+    FEATURE_NAMES = ['edge_count', 'average_clustering', 'average_path_length', 'diameter', 'degree_norm']
     FEATURE_COUNT = len(FEATURE_NAMES)
     SAMPLE_SIZE = TARGET_COUNT + FEATURE_COUNT
     estimators = []
@@ -141,14 +147,14 @@ class Performer(object):
         if benchmark == None:
             temp_name = quantity
             if quantity in ['latency', 'energy', 'latency_energy_product', 'hop_count_average',
-                            'path_length_average', 'link_length_average', 'hop_counts', 'path_lengths',
-                            'link_lengths']:
+                            'path_length_average', 'link_length_average', 'small_world_ness']:
                 file_name = self.document_directory + temp_name
             elif quantity in ['accuracy']:
                 file_name = temp_name + '.tsv'
         else:
             temp_name = quantity + '_' + benchmark
-            if quantity in ['trace', 'links', 'result', 'network_figure']:
+            if quantity in ['trace', 'links', 'result', 'network_figure', 'hop_counts', 'path_lengths',
+                            'link_lengths']:
                 file_name = self.document_directory + temp_name
             elif quantity in ['topology', 'configuration']:
                 file_name = self.network_directory + temp_name
@@ -160,9 +166,9 @@ class Performer(object):
                 raise NameError('no file for quantity: ' + quantity)
         return file_name
     def extract_features(self, benchmark, graph):
-        raw_features = [number_of_edges(graph),
-                        self.weighted_length(performer.traffic[benchmark], graph, 'weight'),
-                        diameter(graph), radius(graph), norm(graph.degree().values())**2]
+        raw_features = [number_of_edges(graph), average_clustering(graph.to_undirected()),
+                        self.weighted_average_path_length(performer.traffic[benchmark], graph, 'weight'),
+                        diameter(graph), norm(graph.degree().values())]
         return raw_features
     def set_radix(self, radix):
         self.RADIX = radix
@@ -218,6 +224,7 @@ class Performer(object):
         degrees = graph.degree().values()
         degree_average = average(degrees)
         degree_max = max(degrees)
+        # print degree_average, degree_max
         if degree_average <= self.DEGREE_AVERAGE and degree_max <= self.DEGREE_MAX and is_strongly_connected(graph):
             return True
         else:
@@ -230,13 +237,14 @@ class Performer(object):
         for source, destination, edge_attributes in graph.edges(data=True):
             edge_attributes['weight'] = self.edge_weight(graph, source, destination)
         return
-    # def generate_random_graph(self):
-    #     edge_count = uniform(self.EDGE_COUNT_MIN, self.EDGE_COUNT_MAX)
-    #     while True:
-    #         graph = gnm_random_graph(self.NODE_COUNT, 2 * edge_count, directed = True)
-    #         if self.constraints_satisfied(graph):
-    #             self.process_graph(graph)
-    #             return graph
+    def generate_random_graph(self):
+        edge_count = uniform(self.EDGE_COUNT_MIN, self.EDGE_COUNT_MAX)
+        edge_count = self.EDGE_COUNT_MIN
+        while True:
+            graph = gnm_random_graph(self.NODE_COUNT, edge_count, directed = True)
+            if self.constraints_satisfied(graph):
+                self.process_graph(graph)
+                return graph
     def key_mapping(self, tuple_key):
         new_key = tuple_key[0] * self.RADIX + tuple_key[1]
         return new_key
@@ -250,20 +258,23 @@ class Performer(object):
         self.process_graph(graph)
         return graph
     def generate_small_world_graph(self):
+        print 'performer: generate_small_world_graph: '
         while True:
             tuple_keyed_graph = navigable_small_world_graph(self.RADIX)
             graph = relabel_nodes(tuple_keyed_graph, self.key_mapping)
-            if True:
+            if self.constraints_satisfied(graph):
                 self.process_graph(graph)
+                actuator.add_design_instance('small_world', graph)
                 return graph
-    def weighted_length(self, traffic, graph, weight):
+    def weighted_average_path_length(self, traffic, graph, weight):
         raw_path_lengths = shortest_path_length(graph, weight = weight)
         path_lengths = zeros((self.NODE_COUNT, self.NODE_COUNT))
         for source in raw_path_lengths:
             for destination in raw_path_lengths[source]:
                 path_lengths[source][destination] = raw_path_lengths[source][destination]
         averaged_traffic = tile(traffic, (self.NODE_COUNT,1))
-        return average(path_lengths, weights = averaged_traffic)
+        weighted_average = average(path_lengths, weights = averaged_traffic)
+        return weighted_average
     def load_data(self, dataset, columns):
         raw_dataset = loadtxt(dataset, usecols = columns, skiprows = 1)
         self.scaler.fit(raw_dataset)
@@ -304,7 +315,7 @@ class Performer(object):
     def initialize_dataset(self):
         for round in range(self.INITIAL_DATASET_SIZE):
             print 'performer: initialize_dataset: round =', round
-            graph = self.generate_watts_strogatz_graph()
+            graph = self.generate_small_world_graph()
             self.add_data(self.file_name('dataset', self.benchmark), True, graph)
         return
     def string_to_graph(self, graph_string):
@@ -412,50 +423,54 @@ class Actuator(object):
         axis.set_ylabel(values)
         axis.get_figure().savefig(performer.file_name(values))
         return
-    def compare(self, dataframe, index, columns, values):
-        feature = dataframe[[index, columns, values]]
-        print feature
-        feature = feature.pivot(index, columns, values)
-        actuator.visualize(feature, values)
+    def plot_line(self, dataframe, index, columns, values):
+        data = dataframe[[index, columns, values]]
+        print 'actuator: plot_line: ', index, columns, values
+        data = data.pivot(index, columns, values)
+        actuator.visualize(data, values)
         return
-    def plot_histogram(self, dataframe, column, value):
+    def plot_histogram(self, dataframe, column, value, benchmark):
         figure()
-        print dataframe[[column, value]]
         distributions = DataFrame()
         for index1, row in dataframe.iterrows():
             bin_count = max(row[value]) + 3
-            print bin_count
-            new_column = DataFrame({row[column]: Series(histogram(row[value], bins = range(bin_count))[0])})
+            if value == 'link_lengths':
+                count = 112
+            else:
+                count = -1
+            new_column = DataFrame({row[column]: Series(histogram(row[value][:count], bins = range(bin_count))[0])})
             distributions = concat([distributions, new_column], axis = 1)
+        print 'actuator: plot_histogram: ', column, value
         axis = distributions.plot()
         axis.set_xlabel(value)
-        axis.get_figure().savefig(performer.file_name(value))
+        axis.get_figure().savefig(performer.file_name(value, benchmark))
         return
 actuator = Actuator()
 
 class Optimization(SearchProblem):
     def actions(self, state):
-        performer.add_data(performer.file_name('dataset', performer.benchmark), False, state)
+        # performer.add_data(performer.file_name('dataset', performer.benchmark), False, state)
         successors = []
-        for cluster in combinations(nodes(state),2):
-            successor = state.copy()
-            for node_pair in combinations(cluster,2):
-                if node_pair[1] in successor.neighbors(node_pair[0]):
-                    successor.remove_edge(node_pair[0],node_pair[1])
-                else:
-                    successor.add_edge(node_pair[0], node_pair[1],
-                                       weight = performer.edge_weight(state, node_pair[0], node_pair[1]))
-            if performer.constraints_satisfied(successor):
-                successors.append(successor)
-        if not successors:
-            print 'no successors!'
+        successor1 = state.copy()
+        victim = choice(successor1.edges())
+        successor1.remove_edge(victim[0], victim[1])
+        for source in state.nodes():
+            for destination in state.nodes():
+                successor = successor1.copy()
+                successor.add_edge(source, destination,
+                                   weight = performer.edge_weight(successor, source, destination))
+                successor.remove_edges_from(successor.selfloop_edges())
+                if performer.constraints_satisfied(successor):
+                    successors.append(successor)
+        print 'optimization: actions: successor_count:', len(successors)
         return successors
     def result(self, state, action):
         return action
     def value(self, state):
-        raw_features = performer.extract_features(performer.benchmark, state)
-        estimated_metrics = performer.estimate_metrics(raw_features)
-        estimated_quality = performer.evaluate_quality(estimated_metrics)
+        # raw_features = performer.extract_features(performer.benchmark, state)
+        # estimated_metrics = performer.estimate_metrics(raw_features)
+        # estimated_quality = performer.evaluate_quality(estimated_metrics)
+        estimated_quality = - performer.weighted_average_path_length(performer.traffic[performer.benchmark], state, 'weight')
         return estimated_quality
 
 def initialize(benchmark):
@@ -466,7 +481,7 @@ def initialize(benchmark):
 
 def design_freenet(benchmark):
     performer.initialize_benchmark(benchmark)
-    restarts = 100
+    restarts = 1000
     iterations = 200
     for trial in range(restarts):
         print 'design_freenet:', 'benchmark =', performer.benchmark + ';',
@@ -478,12 +493,12 @@ def design_freenet(benchmark):
         actuator.add_design_instance('freenet', graph)
     return
 
-def design_small_world(benchmark):
-    performer.initialize_benchmark(benchmark)
-    print 'design_small_world: ' + performer.benchmark
-    graph = performer.generate_small_world_graph()
-    actuator.add_design_instance('small_world', graph)
-    return
+# def design_small_world(benchmark):
+#     performer.initialize_benchmark(benchmark)
+#     print 'design_small_world: ' + performer.benchmark
+#     graph = performer.generate_small_world_graph()
+#     actuator.add_design_instance('small_world', graph)
+#     return
 
 def design_mesh(benchmark):
     performer.initialize_benchmark(benchmark)
@@ -494,6 +509,8 @@ def design_mesh(benchmark):
 
 def analyze():
     # metrics = ['latency', 'power', 'latency_power_product']
+    average_path_length_random = 18
+    average_clustering_random = 0.06
     metrics = ['power']
     results = DataFrame()
     for benchmark in performer.benchmarks:
@@ -506,13 +523,19 @@ def analyze():
     results['energy'] = results['power'] * 7.511e-8
     results['latency_energy_product'] = results['latency'] * results['energy']
     results['edge_count'] = [number_of_edges(g) for g in results['graph']]
+    results['average_clustering'] = [average_clustering(g.to_undirected()) for g in results['graph']]
     results['path_lengths'] = [[length for d in shortest_path_length(g, weight = 'weight').values()
                                 for length in d.values()] for g in results['graph']]
-    results['path_length_average'] = [average(h) for h in results['path_lengths']]
+    results['path_length_average'] = [performer.weighted_average_path_length(
+        performer.traffic[row['benchmark']], row['graph'], 'weight') for index, row in results.iterrows()]
+    results['small_world_ness'] = [(record['average_clustering']/record['path_length_average'])
+                                    /(average_clustering_random / average_path_length_random)
+                                    for index, record in results.iterrows()]
     results['path_length_max'] = [max(h) for h in results['path_lengths']]
     results['hop_counts'] = [[length for d in shortest_path_length(g).values()
                               for length in d.values()] for g in results['graph']]
-    results['hop_count_average'] = [average(h) for h in results['hop_counts']]
+    results['hop_count_average'] = [performer.weighted_average_path_length(
+        performer.traffic[row['benchmark']], row['graph'], None) for index, row in results.iterrows()]
     results['hop_count_max'] = [max(h) for h in results['hop_counts']]
     results['diameter'] = [diameter(g) for g in results['graph']]
     results['radius'] = [radius(g) for g in results['graph']]
@@ -523,38 +546,42 @@ def analyze():
     results['degrees'] = [g.degree().values() for g in results['graph']]
     results['degree_average'] = [average(d) for d in results['degrees']]
     results['degree_max'] = [max(d) for d in results['degrees']]
-    results['degree_norm'] = [norm(d)**2 for d in results['degrees']]
+    results['degree_norm'] = [norm(d) for d in results['degrees']]
     results['network_figure'] = [performer.file_name('network_figure', b) for b in results['benchmark']]
     results['architecture/benchmark'] = results['architecture'] + '/' + results['benchmark']
     # results.sort('energy', inplace = True)
-    print 'analyze :', results.columns.values
-    attributes = ['path_lengths', 'hop_counts', 'link_lengths']
-    mask = (results['benchmark'] == 'fft') & (results['architecture'] == 'mesh')
-    mask = (results['architecture'] == 'freenet')
-    mask = (results['benchmark'] == 'fft')
-    for attribute in attributes:
-        actuator.plot_histogram(results[mask], 'architecture/benchmark', attribute)
-    # attributes = ['latency', 'energy', 'latency_energy_product', 'path_length_average', 'hop_count_average',
-    #               'link_length_average']
-    # for attribute in attributes:
-    #     actuator.compare(results, 'benchmark', 'architecture', attribute)
+    print 'analyze:', results.columns.values
+    for attribute in ['latency', 'energy', 'latency_energy_product', 'path_length_average', 'hop_count_average',
+                      'link_length_average']:
+        actuator.plot_line(results, 'benchmark', 'architecture', attribute)
+    for attribute in ['path_lengths', 'hop_counts', 'link_lengths']:
+        for benchmark in performer.benchmarks:
+            mask = results['benchmark'] == benchmark
+            actuator.plot_histogram(results[mask], 'architecture/benchmark', attribute, benchmark)
     # freenet_topologies = results[results['architecture'] == 'freenet']
     # map(actuator.draw_graph, freenet_topologies['benchmark'],
     #     freenet_topologies['topology'], freenet_topologies['network_figure'])
     return
 
+def test():
+    pass
+
 if __name__ == '__main__':
-    # performer.initialize_optimization_target('power')
-    # pool = Pool(8)
+    performer.initialize_optimization_target('latency')
+    pool = Pool(8)
+    # test()
     # pool.map(initialize, performer.benchmarks)
     # pool.map(design_mesh, performer.benchmarks)
     # pool.map(design_small_world, performer.benchmarks)
-    # pool.map(design_freenet, performer.benchmarks)
+    pool.map(design_freenet, performer.benchmarks)
     # initialize('fft')
     # design_mesh('fft')
     # design_small_world('fft')
     # design_freenet('fft')
-    analyze()
-    # graph = performer.generate_small_world_graph()
+    # analyze()
     # pprint(graph.nodes(data = True))
     # pprint(graph.edges(data = True))
+    # for benchmark in performer.benchmarks:
+    #     data = read_csv(performer.file_name('dataset', benchmark), sep = '\t', skipinitialspace = True)
+    #     print data.tail()
+        # print data.describe()
