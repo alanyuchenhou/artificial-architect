@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 # simulation defficiency: power calculation inaccurate, uniform link length
-# task += booksim2/src/examples/anynet/anynet_config: sample_period
-# task += generate_navigable_small_world_graph
 from multiprocessing import Pool
 from shutil import copyfile
 from ast import literal_eval
@@ -42,12 +40,12 @@ from networkx import neighbors
 from networkx import is_connected
 from networkx import is_strongly_connected
 from networkx import diameter
-from networkx import number_of_edges
 from networkx import radius
 from networkx import degree
 from networkx import density
 from networkx import draw
 from networkx import draw_networkx_edge_labels
+from networkx import complete_graph
 from networkx import gnm_random_graph
 from networkx import grid_2d_graph
 from networkx import connected_watts_strogatz_graph
@@ -80,6 +78,7 @@ from numpy import linspace
 from numpy import squeeze
 from numpy.linalg import norm
 from numpy.random import rand
+from numpy.random import randn
 from pandas import read_csv
 from pandas import DataFrame
 from pandas import Series
@@ -129,7 +128,7 @@ class Performer(object):
     NODE_WEIGHT = 3
     DIMENSION = 2
     RADIX = 8
-    DEGREE_AVERAGE = 12
+    DEGREE_AVERAGE = 10
     DEGREE_MAX = 16
     NODE_COUNT = RADIX ** DIMENSION
     EDGE_COUNT_MIN = NODE_COUNT * DEGREE_AVERAGE / 3
@@ -166,7 +165,7 @@ class Performer(object):
                 raise NameError('no file for quantity: ' + quantity)
         return file_name
     def extract_features(self, benchmark, graph):
-        raw_features = [number_of_edges(graph), average_clustering(graph.to_undirected()),
+        raw_features = [graph.number_of_edges(), average_clustering(graph.to_undirected()),
                         self.weighted_average_path_length(performer.traffic[benchmark], graph, 'weight'),
                         diameter(graph), norm(graph.degree().values())]
         return raw_features
@@ -507,26 +506,30 @@ def design_mesh(benchmark):
     actuator.add_design_instance('mesh', graph)
     return
 
-def analyze():
+def analyze(metrics):
     # metrics = ['latency', 'power', 'latency_power_product']
     average_path_length_random = 18
     average_clustering_random = 0.06
-    metrics = ['power']
     results = DataFrame()
     for benchmark in performer.benchmarks:
         data = read_csv(performer.file_name('design', benchmark), sep = '\t', skipinitialspace = True)
         for architecture in ['mesh', 'small_world', 'freenet']:
             architecture_data = data[data['architecture'] == architecture]
-            record = architecture_data.ix[architecture_data[metrics].idxmin()]
+            if architecture == 'freenet':
+                index = architecture_data[metrics].idxmin()
+            else:
+                index = abs(architecture_data[metrics] - architecture_data[metrics].mean()).argmin()
+            record = architecture_data.ix[index]
             results = results.append(record, ignore_index = True)
     results['graph'] = [performer.string_to_graph(t) for t in results['topology']]
     results['energy'] = results['power'] * 7.511e-8
     results['latency_energy_product'] = results['latency'] * results['energy']
-    results['edge_count'] = [number_of_edges(g) for g in results['graph']]
+    results['edge_count'] = [g.number_of_edges() for g in results['graph']]
     results['average_clustering'] = [average_clustering(g.to_undirected()) for g in results['graph']]
     results['path_lengths'] = [[length for d in shortest_path_length(g, weight = 'weight').values()
                                 for length in d.values()] for g in results['graph']]
-    results['path_length_average'] = [performer.weighted_average_path_length(
+    results['path_length_average'] = [average(p) for p in results['path_lengths']]
+    results['path_length_weighted_average'] = [performer.weighted_average_path_length(
         performer.traffic[row['benchmark']], row['graph'], 'weight') for index, row in results.iterrows()]
     results['small_world_ness'] = [(record['average_clustering']/record['path_length_average'])
                                     /(average_clustering_random / average_path_length_random)
@@ -534,7 +537,8 @@ def analyze():
     results['path_length_max'] = [max(h) for h in results['path_lengths']]
     results['hop_counts'] = [[length for d in shortest_path_length(g).values()
                               for length in d.values()] for g in results['graph']]
-    results['hop_count_average'] = [performer.weighted_average_path_length(
+    results['hop_count_average'] = [average(h) for h in results['hop_counts']]
+    results['hop_count_weighted_average'] = [performer.weighted_average_path_length(
         performer.traffic[row['benchmark']], row['graph'], None) for index, row in results.iterrows()]
     results['hop_count_max'] = [max(h) for h in results['hop_counts']]
     results['diameter'] = [diameter(g) for g in results['graph']]
@@ -549,8 +553,9 @@ def analyze():
     results['degree_norm'] = [norm(d) for d in results['degrees']]
     results['network_figure'] = [performer.file_name('network_figure', b) for b in results['benchmark']]
     results['architecture/benchmark'] = results['architecture'] + '/' + results['benchmark']
-    # results.sort('energy', inplace = True)
+    results.sort('architecture', inplace = True)
     print 'analyze:', results.columns.values
+    print results[['architecture', 'benchmark', 'latency', 'energy', 'average_clustering', 'path_length_average', 'small_world_ness', 'hop_count_average', 'link_length_average', 'degree_average', 'degree_norm', 'edge_count', 'degree_max']]
     for attribute in ['latency', 'energy', 'latency_energy_product', 'path_length_average', 'hop_count_average',
                       'link_length_average']:
         actuator.plot_line(results, 'benchmark', 'architecture', attribute)
@@ -558,27 +563,39 @@ def analyze():
         for benchmark in performer.benchmarks:
             mask = results['benchmark'] == benchmark
             actuator.plot_histogram(results[mask], 'architecture/benchmark', attribute, benchmark)
+
     # freenet_topologies = results[results['architecture'] == 'freenet']
     # map(actuator.draw_graph, freenet_topologies['benchmark'],
     #     freenet_topologies['topology'], freenet_topologies['network_figure'])
     return
 
 def test():
-    pass
+    # graph = performer.generate_small_world_graph()
+    # degrees = graph.degree().values()
+    # degree_average = average(degrees)
+    # degree_max = max(degrees)
+    # print degree_average, degree_max
+    complete = complete_graph(performer.NODE_COUNT)
+    performer.process_graph(complete)
+    path_length = average_shortest_path_length(complete, 'weight')
+    print path_length
+    return
 
 if __name__ == '__main__':
-    performer.initialize_optimization_target('latency')
+    target = 'power'            # this triggers a bug: two entries have minimum power in canneal
+    target = 'latency'
+    performer.initialize_optimization_target(target)
     pool = Pool(8)
     # test()
     # pool.map(initialize, performer.benchmarks)
     # pool.map(design_mesh, performer.benchmarks)
     # pool.map(design_small_world, performer.benchmarks)
-    pool.map(design_freenet, performer.benchmarks)
+    # pool.map(design_freenet, performer.benchmarks)
     # initialize('fft')
     # design_mesh('fft')
     # design_small_world('fft')
     # design_freenet('fft')
-    # analyze()
+    analyze(target)
     # pprint(graph.nodes(data = True))
     # pprint(graph.edges(data = True))
     # for benchmark in performer.benchmarks:
