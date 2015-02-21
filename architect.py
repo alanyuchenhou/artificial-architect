@@ -142,18 +142,16 @@ class Performer(object):
     SAMPLE_SIZE = TARGET_COUNT + FEATURE_COUNT
     estimators = []
     scaler = StandardScaler()
-    def file_name(self, quantity, benchmark = None):
-        if benchmark == None:
+    def file_name(self, quantity, index = None):
+        if index == None:
             temp_name = quantity
-            if quantity in ['latency', 'energy', 'latency_energy_product', 'hop_count_average',
-                            'path_length_average', 'link_length_average', 'small_world_ness']:
-                file_name = self.document_directory + temp_name
-            elif quantity in ['accuracy']:
+            if quantity in ['accuracy']:
                 file_name = temp_name + '.tsv'
         else:
-            temp_name = quantity + '_' + benchmark
-            if quantity in ['trace', 'links', 'result', 'network_figure', 'hop_counts', 'path_lengths',
-                            'link_lengths']:
+            temp_name = quantity + '_' + index
+            if quantity in ['hop_count_average', 'path_length_average', 'link_length_average', 'trace', 'links',
+                            'result', 'network_figure', 'hop_counts', 'path_lengths',
+                            'latency', 'energy', 'latency_energy_product', 'link_lengths']:
                 file_name = self.document_directory + temp_name
             elif quantity in ['topology', 'configuration']:
                 file_name = self.network_directory + temp_name
@@ -416,17 +414,18 @@ class Actuator(object):
         # draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
         savefig(network_figure)
         return
-    def visualize(self, dataframe, values):
-        print dataframe
+    def visualize(self, dataframe, values, index):
+        print 'actuator: visualize: ', values, index
         axis = dataframe.plot()
         axis.set_ylabel(values)
-        axis.get_figure().savefig(performer.file_name(values))
+        axis.get_figure().savefig(performer.file_name(values, index))
         return
     def plot_line(self, dataframe, index, columns, values):
         data = dataframe[[index, columns, values]]
         print 'actuator: plot_line: ', index, columns, values
+        print data
         data = data.pivot(index, columns, values)
-        actuator.visualize(data, values)
+        actuator.visualize(data, values, index)
         return
     def plot_histogram(self, dataframe, column, value, benchmark):
         figure()
@@ -506,6 +505,20 @@ def design_mesh(benchmark):
     actuator.add_design_instance('mesh', graph)
     return
 
+def view():
+    result = DataFrame()
+    metrics = ['latency', 'energy', 'latency_energy_product']
+    for benchmark in performer.benchmarks:
+        data = read_csv(performer.file_name('design', benchmark), sep = '\t', skipinitialspace = True, skiprows = range(1,30))
+        data['energy'] = data['power'] * 7.511e-8
+        data['latency_energy_product'] = data['latency'] * data['energy']
+        evolution = data.cummin()
+        evolution = data
+        evolution['trial'] = evolution.index
+        result=result.append(evolution[['trial', 'benchmark'] + metrics], ignore_index = True)
+    for metric in metrics:
+        actuator.plot_line(result, 'trial', 'benchmark', metric)
+    return
 def analyze(metrics):
     # metrics = ['latency', 'power', 'latency_power_product']
     average_path_length_random = 18
@@ -595,6 +608,7 @@ if __name__ == '__main__':
     # design_mesh('fft')
     # design_small_world('fft')
     # design_freenet('fft')
+    # view()
     analyze(target)
     # pprint(graph.nodes(data = True))
     # pprint(graph.edges(data = True))
