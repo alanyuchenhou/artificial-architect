@@ -112,9 +112,11 @@ class Performer(object):
     # benchmarks = ['bodytrack', 'canneal', 'dedup', 'fluidanimate', 'freqmine', 'swaption', 'vips']
     benchmarks = ['fft', 'lu', 'radix', 'water', 'canneal', 'dedup', 'fluidanimate', 'vips']
     benchmark = None
+    attributes = ['latency', 'energy', 'latency_energy_product', 'path_length_average', 'hop_count_average',
+                      'link_length_average']
+    normalized_attributes = [a + '_normalized' for a in attributes]
     optimization_targets = ['latency', 'power', 'latency_power_product']
     optimization_target = None
-    document_directory = 'documents/'
     network_directory = 'booksim2/src/examples/anynet/'
     configuration_template = network_directory + 'anynet_config'
     traffic = {}
@@ -150,9 +152,9 @@ class Performer(object):
         else:
             temp_name = quantity + '_' + index
             if quantity in ['hop_count_average', 'path_length_average', 'link_length_average', 'trace', 'links',
-                            'result', 'network_figure', 'hop_counts', 'path_lengths',
-                            'latency', 'energy', 'latency_energy_product', 'link_lengths']:
-                file_name = self.document_directory + temp_name
+                            'result', 'network_figure', 'hop_counts', 'path_lengths', 'latency', 'energy',
+                            'latency_energy_product', 'link_lengths'] + self.normalized_attributes:
+                file_name = temp_name
             elif quantity in ['topology', 'configuration']:
                 file_name = self.network_directory + temp_name
             elif quantity in ['design', 'dataset']:
@@ -414,18 +416,14 @@ class Actuator(object):
         # draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
         savefig(network_figure)
         return
-    def visualize(self, dataframe, values, index):
-        print 'actuator: visualize: ', values, index
-        axis = dataframe.plot()
-        axis.set_ylabel(values)
-        axis.get_figure().savefig(performer.file_name(values, index))
-        return
-    def plot_line(self, dataframe, index, columns, values):
+    def plot_bar(self, dataframe, index, columns, values):
         data = dataframe[[index, columns, values]]
         print 'actuator: plot_line: ', index, columns, values
-        print data
         data = data.pivot(index, columns, values)
-        actuator.visualize(data, values, index)
+        # print data
+        axis = data.plot(kind = 'bar', edgecolor = 'none')
+        axis.set_ylabel(values)
+        axis.get_figure().savefig(performer.file_name(values, index))
         return
     def plot_histogram(self, dataframe, column, value, benchmark):
         figure()
@@ -439,7 +437,7 @@ class Actuator(object):
             new_column = DataFrame({row[column]: Series(histogram(row[value][:count], bins = range(bin_count))[0])})
             distributions = concat([distributions, new_column], axis = 1)
         print 'actuator: plot_histogram: ', column, value
-        axis = distributions.plot()
+        axis = distributions.plot(kind = 'bar', edgecolor = 'none')
         axis.set_xlabel(value)
         axis.get_figure().savefig(performer.file_name(value, benchmark))
         return
@@ -566,20 +564,29 @@ def analyze(metrics):
     results['degree_norm'] = [norm(d) for d in results['degrees']]
     results['network_figure'] = [performer.file_name('network_figure', b) for b in results['benchmark']]
     results['architecture/benchmark'] = results['architecture'] + '/' + results['benchmark']
-    results.sort('architecture', inplace = True)
+    # for index, row in results.iterrows():
+    #     mask = (results['architecture'] == 'mesh') & (results['benchmark'] == row['benchmark'])
+    #     factor = squeeze(results[mask]['latency'])
+    #     print factor
+    for normalized_attribute, attribute in zip(performer.normalized_attributes,performer.attributes):
+        results[normalized_attribute] = [row[attribute]/squeeze(
+                results[(results['architecture'] == 'mesh') & (results['benchmark'] == row['benchmark'])][attribute])
+                                              for index, row in results.iterrows()]
+    results.sort('latency', inplace = True)
     print 'analyze:', results.columns.values
-    print results[['architecture', 'benchmark', 'latency', 'energy', 'average_clustering', 'path_length_average', 'small_world_ness', 'hop_count_average', 'link_length_average', 'degree_average', 'degree_norm', 'edge_count', 'degree_max']]
-    for attribute in ['latency', 'energy', 'latency_energy_product', 'path_length_average', 'hop_count_average',
-                      'link_length_average']:
-        actuator.plot_line(results, 'benchmark', 'architecture', attribute)
-    for attribute in ['path_lengths', 'hop_counts', 'link_lengths']:
-        for benchmark in performer.benchmarks:
-            mask = results['benchmark'] == benchmark
-            actuator.plot_histogram(results[mask], 'architecture/benchmark', attribute, benchmark)
+    # print results[['architecture', 'benchmark'] + performer.normalized_attributes]
+    print results[['architecture', 'benchmark', 'latency', 'path_length_average']]
+    # for attribute in performer.normalized_attributes:
+    #     actuator.plot_bar(results, 'benchmark', 'architecture', attribute)
+    # for attribute in ['path_lengths', 'hop_counts', 'link_lengths']:
+    #     for benchmark in performer.benchmarks:
+    #         mask = results['benchmark'] == benchmark
+    #         actuator.plot_histogram(results[mask], 'architecture/benchmark', attribute, benchmark)
 
     # freenet_topologies = results[results['architecture'] == 'freenet']
     # map(actuator.draw_graph, freenet_topologies['benchmark'],
     #     freenet_topologies['topology'], freenet_topologies['network_figure'])
+    check_call(['pdflatex', 'architect'])
     return
 
 def test():
