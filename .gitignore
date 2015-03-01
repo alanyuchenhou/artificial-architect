@@ -36,6 +36,7 @@
 *.log
 *.dat
 *.tsv
-booksim2
-documents/*
-!documents/architect.tex
+*.txt
+*.bbl
+*.bib
+*blg
