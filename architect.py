@@ -184,16 +184,18 @@ class Performer(object):
         else:
             raise NameError('no file for quantity: ' + quantity)
         return name
-    def initialize(self, radix, benchmark, optimization_target):
+    def initialize(self, radix):
+        self.RADIX = radix
+        self.NODE_COUNT = self.RADIX ** self.DIMENSION
+        self.EDGE_COUNT = int(self.NODE_COUNT * 2)
+        return
+    def reinitialize(self, benchmark, optimization_target):
         if (benchmark not in self.BENCHMARKS):
             raise NameError('unknown benchmark: ' + benchmark)
         self.BENCHMARK = benchmark
         if (optimization_target not in self.TARGETS):
             raise NameError('unknown optimization_target: ' + optimization_target)
         self.OPTIMIZATION_TARGET = optimization_target
-        self.RADIX = radix
-        self.NODE_COUNT = self.RADIX ** self.DIMENSION
-        self.EDGE_COUNT = int(self.NODE_COUNT * 2)
         distances = zeros((self.NODE_COUNT, self.NODE_COUNT))
         edge_indices = zeros((self.NODE_COUNT, self.NODE_COUNT), int)
         for node1 in range(self.NODE_COUNT):
@@ -202,7 +204,7 @@ class Performer(object):
                 edge_indices[node1][node2] = self.edge_index(node1, node2)
         alpha = distances**(-4)
         fill_diagonal(alpha, 0)
-        if radix == 8:
+        if self.RADIX == 8:
             raw_traffic = loadtxt('traffic_' + self.BENCHMARK + '.tsv')
         else:
             raw_traffic = rand(self.NODE_COUNT,self.NODE_COUNT)
@@ -483,8 +485,8 @@ def analyze():
     data['link_lengths'] = [get_edge_attributes(g, 'length').values() for g in data['graph']]
     data['network_figure'] = [performer.file_name('network_figure', b) for b in data['benchmark']]
     data['architecture/benchmark'] = data['architecture'] + '/' + data['benchmark']
-    data.sort('benchmark', inplace = True)
-    print data
+    data.sort('latency', inplace = True)
+    print data[data['architecture'] == 'mesh'][['architecture', 'benchmark', 'latency']]
     results = data.ix[data.groupby(['benchmark', 'architecture'])['latency'].idxmin()]
     for normalized_attribute, attribute in zip(performer.NORMALIZED_ATTRIBUTES, performer.ATTRIBUTES):
         normlized_values = []
@@ -505,9 +507,9 @@ def analyze():
 
 def serial():
     # design_freenet(performer.LOG)
-    # design_mesh()
-    design_small_world()
-    design_test()
+    design_mesh()
+    # design_small_world()
+    # design_test()
     return
 def parallel():
     thread_count = 24
@@ -516,7 +518,7 @@ def parallel():
     pool.map(design_freenet, thread_logs)
     return
 def test():
-    performer.initialize(8, 'lu', 'latency')
+    performer.reinitialize('lu', 'latency')
     print performer.FEATURES
     for f in ['topology_test.tsv', 'topology.tsv']:
         raw_topology = loadtxt(f, int)[-64:, -64:]
@@ -528,12 +530,13 @@ def test():
     return
 if __name__ == '__main__':
     # actuator.initialize_files()
+    performer.initialize(8)
     # test()
-    for benchmark in ['vips']:
-    # for benchmark in performer.BENCHMARKS:
-        performer.initialize(8, benchmark, 'latency')
+    # for benchmark in ['vips']:
+    for benchmark in performer.BENCHMARKS:
+        performer.reinitialize(benchmark, 'latency')
         serial()
         # parallel()
-    # analyze()
+    analyze()
     # view()
     # check_call(['pdflatex', 'architect'])
