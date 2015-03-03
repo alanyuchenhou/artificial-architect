@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# simulator bugs: link length ignored; power components missing
+# simulator bugs: power components missing
 from collections import OrderedDict
 from multiprocessing import Pool
 from shutil import copyfile
@@ -55,7 +55,6 @@ from networkx import to_numpy_matrix
 from networkx import from_numpy_matrix
 from networkx import to_dict_of_dicts
 from networkx import to_edgelist
-from networkx import shortest_path
 from networkx import shortest_path_length
 from networkx import average_shortest_path_length
 from networkx import average_clustering
@@ -86,6 +85,7 @@ from numpy.linalg import norm
 from numpy.random import rand
 from numpy.random import randn
 from scipy.spatial.distance import cityblock
+from scipy.spatial.distance import euclidean
 from scipy.stats import rv_discrete
 from pandas import read_csv
 from pandas import DataFrame
@@ -118,27 +118,28 @@ class Performer(object):
     random_edge_generator = None
     scaler = StandardScaler()
     estimators = []
+    NODE_WEIGHT = 3
     DIMENSION = 2
-    RADIX = 8
-    DEGREE_MAX = 8
-    NODE_COUNT = RADIX ** DIMENSION
-    EDGE_COUNT = int(NODE_COUNT * 2)
-    LOG = 'thread.log'
-    BENCHMARKS = ['fft', 'lu', 'radix', 'water', 'canneal', 'dedup', 'fluidanimate', 'vips']
+    DEGREE_MAX = 7
+    RADIX = None
+    NODE_COUNT = None
+    EDGE_COUNT = None
     BENCHMARK = None
     OPTIMIZATION_TARGET = None
-    TOTAL_TRAFFIC = {}
-    TRAFFIC = {}
+    TOTAL_TRAFFIC = None
+    TRAFFIC = None
+    LOG = 'thread.log'
     INITIAL_DATASET_SIZE = 10
+    BENCHMARKS = ['fft', 'lu', 'radix', 'water', 'canneal', 'dedup', 'fluidanimate', 'vips']
     TARGETS = ['latency', 'energy']
     TARGET_TOKENS = ['Avg. Message Latency:', 'Average energy per message done:']
-    FEATURES = ['average_clustering', 'average_hop_count', 'weighted_average_hop_count', 'average_link_length',
+    FEATURES = ['average_clustering', 'average_path_length', 'weighted_average_path_length', 'average_link_length',
                      'average_degree', 'max_degree', 'edge_count', 'total_traffic']
     ATTRIBUTES = TARGETS + FEATURES
     NORMALIZED_ATTRIBUTES = ['normalized_' + a  for a in ATTRIBUTES]
     def extract_features(self, graph):
         print 'performer.extract_features:'
-        raw_features = [average_clustering(graph), average_shortest_path_length(graph),
+        raw_features = [average_clustering(graph), average_shortest_path_length(graph, 'weight'),
                         self.weighted_average_path_length(self.TRAFFIC[self.BENCHMARK], graph),
                         average(get_edge_attributes(graph, 'length').values()), average(graph.degree().values()),
                         max(graph.degree().values()), graph.number_of_edges(), self.TOTAL_TRAFFIC[self.BENCHMARK]]
@@ -147,7 +148,9 @@ class Performer(object):
         node_position = (node_index / self.RADIX, node_index % self.RADIX)
         return node_position
     def link_length(self, source, destination):
-        return cityblock(self.position(source), self.position(destination))
+        return int(euclidean(self.position(source), self.position(destination)))
+    def edge_weight(self, source, destination):
+        return self.link_length(source, destination) + self.NODE_WEIGHT
     def edge_index(self, source, destination):
         index = source * self.NODE_COUNT + destination
         return index
@@ -156,46 +159,43 @@ class Performer(object):
         return nodes
     def file_name(self, quantity, index):
         temp_name = quantity + '_' + index
-        if quantity in ['network_figure','hop_counts','link_lengths'] + self.ATTRIBUTES + self.NORMALIZED_ATTRIBUTES:
+        if quantity in ['network_figure','path_lengths','link_lengths']+self.ATTRIBUTES+self.NORMALIZED_ATTRIBUTES:
             name = temp_name
         elif quantity in ['design', 'dataset']:
             name = temp_name + '.tsv'
         else:
             raise NameError('no file for quantity: ' + quantity)
         return name
-    def reset(self, benchmark, optimization_target):
+    def initialize(self, radix, benchmark, optimization_target):
         if (benchmark not in self.BENCHMARKS):
             raise NameError('unknown benchmark: ' + benchmark)
         self.BENCHMARK = benchmark
         if (optimization_target not in self.TARGETS):
             raise NameError('unknown optimization_target: ' + optimization_target)
         self.OPTIMIZATION_TARGET = optimization_target
-        print 'performer.reset:', self.BENCHMARK, self.OPTIMIZATION_TARGET, self.NODE_COUNT, self.EDGE_COUNT
-    def initialize(self, radix):
         self.RADIX = radix
         self.NODE_COUNT = self.RADIX ** self.DIMENSION
-        self.EDGE_COUNT = int(self.NODE_COUNT * 2)
+        self.EDGE_COUNT = int(self.NODE_COUNT * 1.75)
         distances = zeros((self.NODE_COUNT, self.NODE_COUNT))
         edge_indices = zeros((self.NODE_COUNT, self.NODE_COUNT), int)
         for node1 in range(self.NODE_COUNT):
             for node2 in range(self.NODE_COUNT):
-                distances[node1][node2] = cityblock(self.position(node1), self.position(node2))
+                distances[node1][node2] = self.edge_weight(node1, node2)
                 edge_indices[node1][node2] = self.edge_index(node1, node2)
         alpha = distances**(-1.8)
         fill_diagonal(alpha, 0)
-        for benchmark in self.BENCHMARKS:
-            if radix == 8:
-                raw_traffic = loadtxt('traffic_' + benchmark + '.tsv')
-            else:
-                raw_traffic = rand(self.NODE_COUNT,self.NODE_COUNT)
-            raw_traffic +=  raw_traffic.transpose()
-            self.TOTAL_TRAFFIC[benchmark] = raw_traffic.sum().sum()
-            self.TRAFFIC[benchmark] = raw_traffic
-            # raw_probabilities = raw_traffic * alpha
-            raw_probabilities = raw_traffic
-            probabilities = raw_probabilities / (raw_probabilities.sum().sum())
-            self.random_edge_generator = rv_discrete(name = 'custm',values = (edge_indices,probabilities))
-        print 'performer.initialize:', self.TOTAL_TRAFFIC
+        if radix == 8:
+            raw_traffic = loadtxt('traffic_' + self.BENCHMARK + '.tsv')
+        else:
+            raw_traffic = rand(self.NODE_COUNT,self.NODE_COUNT)
+        raw_traffic +=  raw_traffic.transpose()
+        self.TOTAL_TRAFFIC = raw_traffic.sum().sum()
+        self.TRAFFIC = raw_traffic
+        raw_probabilities = raw_traffic * alpha
+        # raw_probabilities = raw_traffic
+        probabilities = raw_probabilities / (raw_probabilities.sum().sum())
+        self.random_edge_generator = rv_discrete(name = 'custm',values = (edge_indices,probabilities))
+        print 'performer.initialize:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT self.TOTAL_TRAFFIC
         return
     def update_estimators(self, accuracy):
         data = self.load_data(self.file_name('dataset',self.BENCHMARK), range(len(performer.ATTRIBUTES)))
@@ -224,7 +224,7 @@ class Performer(object):
     def constraints_satisfied(self, graph):
         degree_max = max(graph.degree().values())
         # print 'performer.constraints_satisfied:', degree_max, graph.number_of_edges(), is_connected(graph)
-        if graph.number_of_edges() <= self.EDGE_COUNT and degree_max <= self.DEGREE_MAX and is_connected(graph):
+        if graph.number_of_edges() == self.EDGE_COUNT and degree_max <= self.DEGREE_MAX and is_connected(graph):
             return True
         else:
             return False
@@ -234,6 +234,7 @@ class Performer(object):
             node_attributes['position'] = self.position(node_key)
         for source, destination, edge_attributes in graph.edges(data=True):
             edge_attributes['length'] = self.link_length(source, destination)
+            edge_attributes['weight'] = self.edge_weight(source, destination)
         return
     def key_mapping(self, tuple_key):
         new_key = tuple_key[0] * self.RADIX + tuple_key[1]
@@ -259,13 +260,14 @@ class Performer(object):
                 graph.add_node(i)
             while graph.number_of_edges() < self.EDGE_COUNT:
                 source, destination = self.edge_nodes(self.random_edge_generator.rvs())
-                graph.add_edge(source, destination, length = self.link_length(source, destination))
+                graph.add_edge(source, destination, length = self.link_length(source, destination),
+                               weight = self.edge_weight(source, destination))
             if self.constraints_satisfied(graph):
                 self.process_graph(graph)
                 return graph
     def weighted_average_path_length(self, traffic, graph):
         # print 'performer.weighted_average_path_length:'
-        raw_path_lengths = shortest_path_length(graph)
+        raw_path_lengths = shortest_path_length(graph, 'weight')
         path_lengths = zeros((self.NODE_COUNT, self.NODE_COUNT))
         for source in raw_path_lengths:
             for destination in raw_path_lengths[source]:
@@ -308,6 +310,13 @@ class Performer(object):
         with open(self.file_name('dataset', None), 'a') as f:
             f.write('\t'.join(map(str, data_instance)) + '\n')
         return
+    def evaluate_metrics(self, graph, thread_log):
+        actuator.configure_topology(graph)
+        with open(thread_log, 'w+') as f:
+            check_call([actuator.SIMULATOR, self.BENCHMARK], stdout = f)
+        metrics = sensor.extract_targets(thread_log)
+        print 'performer.evaluate_metrics:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT, metrics
+        return metrics
     def initialize_dataset(self, thread_log):
         for index in range(self.INITIAL_DATASET_SIZE):
             print 'performer.initialize_dataset:', thread_log, index
@@ -320,13 +329,6 @@ class Performer(object):
         graph = Graph(literal_eval(graph_string))
         performer.process_graph(graph)
         return graph
-    def evaluate_metrics(self, graph, thread_log):
-        actuator.configure_topology(graph)
-        with open(thread_log, 'w+') as f:
-            check_call([actuator.SIMULATOR, self.BENCHMARK], stdout = f)
-        metrics = sensor.extract_targets(thread_log)
-        print 'performer.evaluate_metrics:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT, metrics
-        return metrics
     def add_design_instance(self, architecture, graph, metrics):
         design_instance = [datetime.now(), architecture, self.BENCHMARK,
                            self.OPTIMIZATION_TARGET, to_dict_of_dicts(graph)] + metrics
@@ -414,31 +416,32 @@ class Optimization(SearchProblem):
         for source in state.nodes():
             for destination in state.nodes():
                 successor = successor1.copy()
-                successor.add_edge(source, destination, length = performer.link_length(source, destination))
+                successor.add_edge(source, destination, length = performer.link_length(source, destination),
+                                   wight = performer.edge_weight(source, destination))
                 successor.remove_edges_from(successor.selfloop_edges())
                 if performer.constraints_satisfied(successor):
                     successors.append(successor)
-        print 'optimization: actions: successor_count:', len(successors)
+        print 'optimization.actions: successor_count:', len(successors)
         return successors
     def result(self, state, action):
         return action
     def value(self, state):
-        raw_features = performer.extract_features(state)
-        estimated_metrics = performer.estimate_metrics(raw_features)
-        estimated_quality = performer.evaluate_quality(estimated_metrics)
-        return estimated_quality
+        # raw_features = performer.extract_features(state)
+        # estimated_metrics = performer.estimate_metrics(raw_features)
+        # estimated_quality = performer.evaluate_quality(estimated_metrics)
+        # return estimated_quality
+        return weighted_average_path_length(state, 'weight')
 
 def design_freenet(thread_log):
-    restarts = 10
+    restarts = 1
     for trial in range(restarts):
-        print 'design_freenet:', performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT
-        print 'trial =', trial
-        performer.update_estimators(4)
-        optimization = Optimization(initial_state = performer.generate_small_world_graph())
+        print 'design_freenet:', performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT,  'trial =', trial
+        # performer.update_estimators(4)
+        optimization = Optimization(initial_state = performer.generate_random_graph())
         final = hill_climbing(optimization, iterations_limit = 200)
         graph = final.state
         metrics = performer.evaluate_metrics(graph, thread_log)
-        self.add_data(True, graph, metrics)
+        # performer.add_data(True, graph, metrics)
         performer.add_design_instance('freenet', graph, metrics)
     return
 
@@ -456,11 +459,17 @@ def design_small_world():
     performer.add_design_instance('small_world', graph, metrics)
     return
 
+def design_random():
+    print 'design_random:' + performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT
+    graph = performer.generate_random_graph()
+    metrics = performer.evaluate_metrics(graph, performer.LOG)
+    performer.add_design_instance('random', graph, metrics)
+    return
+
 def design_test():
     print 'test_small_world:' + performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT
     raw_topology = loadtxt('topology_test.tsv', int)[-64:, -64:]
     graph = from_numpy_matrix(raw_topology)
-    print performer.extract_features(graph)
     metrics = performer.evaluate_metrics(graph, performer.LOG)
     performer.add_design_instance('test_small_world', graph, metrics)
     return
@@ -482,7 +491,7 @@ def view():
 def analyze():
     # metrics = ['latency', 'energy']
     metrics = ['latency']
-    average_hop_count_random = 18
+    average_path_length_random = 18
     average_clustering_random = 0.06
     results = DataFrame()
     data = read_csv(performer.file_name('design', ''), sep = '\t', skipinitialspace = True)
@@ -490,11 +499,12 @@ def analyze():
     data['link_lengths'] = [get_edge_attributes(g, 'length').values() for g in data['graph']]
     data['average_link_length'] = [average(h) for h in data['link_lengths']]
     data['max_link_length'] = [max(h) for h in data['link_lengths']]
-    data['total_traffic'] = [performer.TOTAL_TRAFFIC[b] for b in data['benchmark']]
-    data.sort('latency', inplace = True)
-    print data[['architecture', 'benchmark', 'average_link_length'] + performer.TARGETS]
+    # data['total_traffic'] = [performer.TOTAL_TRAFFIC[b] for b in data['benchmark']]
+    data.sort('benchmark', inplace = True)
+    # print data[['architecture', 'benchmark', 'average_link_length'] + performer.TARGETS]
     for benchmark in performer.BENCHMARKS:
         # for architecture in ['mesh', 'small_world', 'freenet']:
+        # for architecture in ['mesh', 'small_world', 'random']:
         for architecture in ['mesh']:
             architecture_data = data[(data['architecture'] == architecture) & (data['benchmark'] == benchmark)]
             index = architecture_data[metrics].idxmin()
@@ -506,15 +516,15 @@ def analyze():
             results = results.append(record, ignore_index = True)
     results['latency_energy_product'] = results['latency'] * results['energy']
     results['edge_count'] = [g.number_of_edges() for g in results['graph']]
-    results['average_clustering'] = [average_clustering(g.to_undirected()) for g in results['graph']]
-    results['hop_counts'] = [[length for d in shortest_path_length(g).values()
+    results['average_clustering'] = [average_clustering(g) for g in results['graph']]
+    results['path_lengths'] = [[length for d in shortest_path_length(g, 'weight').values()
                               for length in d.values()] for g in results['graph']]
-    results['average_hop_count'] = [average(h) for h in results['hop_counts']]
-    results['weighted_average_hop_count'] = [performer.weighted_average_path_length(
+    results['average_path_length'] = [average(h) for h in results['path_lengths']]
+    results['weighted_average_path_length'] = [performer.weighted_average_path_length(
         performer.TRAFFIC[row['benchmark']], row['graph']) for index, row in results.iterrows()]
-    results['max_hop_count'] = [max(h) for h in results['hop_counts']]
-    results['small_world_ness'] = [(row['average_clustering']/row['average_hop_count'])
-                                    /(average_clustering_random / average_hop_count_random)
+    results['max_path_length'] = [max(h) for h in results['path_lengths']]
+    results['small_world_ness'] = [(row['average_clustering']/row['average_path_length'])
+                                    /(average_clustering_random / average_path_length_random)
                                     for index, row in results.iterrows()]
     results['degrees'] = [g.degree().values() for g in results['graph']]
     results['average_degree'] = [average(d) for d in results['degrees']]
@@ -530,12 +540,12 @@ def analyze():
                 results[(results['architecture'] == 'mesh') & (results['benchmark'] == row['benchmark'])][attribute])
                                               for index, row in results.iterrows()]
     print 'analyze:', results.columns.values
-    attributes = performer.TARGETS + ['total_traffic', 'average_link_length']
+    attributes = performer.TARGETS + performer.FEATURES
     # print results[['architecture', 'benchmark'] + performer.NORMALIZED_ATTRIBUTES]
-    # print results[['architecture', 'benchmark'] + attributes]
+    print results[['architecture', 'benchmark'] + attributes]
     # for attribute in performer.normalized_attributes:
     #     actuator.plot_bar(results, 'benchmark', 'architecture', attribute)
-    # for attribute in ['hop_counts', 'link_lengths']:
+    # for attribute in ['path_lengths', 'link_lengths']:
     #     for benchmark in performer.BENCHMARKS:
     #         mask = results['benchmark'] == benchmark
     #         actuator.plot_histogram(results[mask], 'architecture/benchmark', attribute, benchmark)
@@ -545,34 +555,34 @@ def analyze():
     #     freenet_topologies['topology'], freenet_topologies['network_figure'])
     return
 
-def test():
-    for benchmark in performer.BENCHMARKS:
-    # for benchmark in ['fft']:
-        performer.reset(benchmark, 'latency')
-        # print performer.FEATURES
-        # graph = performer.generate_grid_graph()
-        # print performer.extract_features(graph)
-        # raw_topology = loadtxt('topology_test.tsv', int)[-64:, -64:] + 1
-        # graph = from_numpy_matrix(raw_topology)
-        # performer.process_graph(graph)
-        # actuator.configure_topology(graph)
-        # print performer.extract_features(graph)
-        # print performer.constraints_satisfied(graph)
-        # design_mesh()
-        design_small_world()
-        # design_test()
+def serial():
+    # raw_topology = loadtxt('topology_test.tsv', int)[-64:, -64:] + 1
+    # graph = from_numpy_matrix(raw_topology)
+    # performer.process_graph(graph)
+    # actuator.configure_topology(graph)
+    # design_freenet(performer.LOG)
+    design_mesh()
+    # design_random()
+    # design_small_world()
+    # design_test()
     return
-
+def parallel():
+    thread_count = 24
+    thread_logs = ['thread' + str(thread) + '.log' for thread in range(thread_count)]
+    pool = Pool(thread_count)
+    pool.map(design_freenet, thread_logs)
+    return
+def test():
+    print cityblock((0,0),(3,4))
+    print euclidean((0,0),(3,4))
+    return
 if __name__ == '__main__':
     # actuator.initialize_files()
-    # thread_count = 8
-    # pool = Pool(thread_count)
-    # thread_logs = ['thread' + str(thread) + '.log' for thread in range(thread_count)]
-    performer.initialize(8)
-    # print performer.TRAFFIC['fft']
-    test()
-    # design_freenet()
-    # view()
+    # for benchmark in ['fft']:
+    for benchmark in performer.BENCHMARKS:
+        performer.initialize(8, benchmark, 'latency')
+        serial()
+        # parallel()
     analyze()
-    # pool.map(design_freenet, thread_logs)
+    # view()
     # check_call(['pdflatex', 'architect'])
