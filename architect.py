@@ -100,7 +100,7 @@ from matplotlib.pyplot import savefig
 
 class Critic(object):
     def evaluate_kernels(self, dataset):
-        data = actuator.load_data(dataset, range(Performer.SAMPLE_COUNT))
+        data = actuator.load_data(dataset, range(performer.SAMPLE_COUNT))
         kernels = ['linear', 'poly', 'rbf', 'sigmoid']
         for kernel in kernels:
             svr = SVR(kernel)
@@ -116,11 +116,11 @@ class Critic(object):
             print 'best_score=', estimator.best_score_
         return
 class Performer(object):
+    SIMULATOR = 'simulator.out'
     DATASET = 'dataset.tsv'
-    LOG = 'thread.log'
-    NODE_WEIGHT = 3
-    DIMENSION = 2
-    DEGREE_MAX = 7
+    TOPOLOGY = None
+    THREAD_ID = None
+    SIMULATION_LOG = None
     RADIX = None
     NODE_COUNT = None
     EDGE_COUNT = None
@@ -128,7 +128,9 @@ class Performer(object):
     OPTIMIZATION_TARGET = None
     TOTAL_TRAFFIC = None
     TRAFFIC = None
-    INITIAL_DATASET_SIZE = 10
+    NODE_WEIGHT = 3
+    DIMENSION = 2
+    DEGREE_MAX = 7
     BENCHMARKS = ['fft', 'lu', 'radix', 'water', 'canneal', 'dedup', 'fluidanimate', 'vips']
     TARGETS = ['latency', 'energy']
     TARGET_TOKENS = ['Avg. Message Latency:', 'Average energy per message done:']
@@ -179,8 +181,8 @@ class Performer(object):
         nodes = (index / self.NODE_COUNT, index % self.NODE_COUNT)
         return nodes
     def file_name(self, quantity, index):
-        if quantity in ['network_figure','path_lengths','link_lengths'] + self.ATTRIBUTES+self.NORMALIZED_ATTRIBUTES:
-            name = quantity + '_' + index
+        if quantity in ['network_figure', 'link_lengths'] + self.ATTRIBUTES + self.NORMALIZED_ATTRIBUTES:
+            name = quantity + '_' + str(index)
         else:
             raise NameError('no file for quantity: ' + quantity)
         return name
@@ -189,7 +191,10 @@ class Performer(object):
         self.NODE_COUNT = self.RADIX ** self.DIMENSION
         self.EDGE_COUNT = int(self.NODE_COUNT * 2)
         return
-    def reinitialize(self, benchmark, optimization_target):
+    def reinitialize(self, thread_id, benchmark, optimization_target):
+        self.THREAD_ID = thread_id
+        self.TOPOLOGY = 'topology' + str(thread_id) +'.tsv'
+        self.SIMULATION_LOG = 'simulation' + str(thread_id) + '.log'
         if (benchmark not in self.BENCHMARKS):
             raise NameError('unknown benchmark: ' + benchmark)
         self.BENCHMARK = benchmark
@@ -218,7 +223,7 @@ class Performer(object):
         print 'performer.initialize:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT, self.TOTAL_TRAFFIC
         return
     def update_estimators(self, accuracy):
-        data = self.load_data(self.DATASET, range(len(performer.ATTRIBUTES)))
+        data = self.load_data(self.DATASET, range(len(self.ATTRIBUTES)))
         c_range = accuracy
         gamma_range = accuracy
         parameters = {'C' : logspace(0, c_range, c_range+1).tolist(),
@@ -231,7 +236,7 @@ class Performer(object):
             estimators.append(GridSearchCV(svrs[i], parameters, n_jobs = -1))
             estimators[i].fit(data[len(self.TARGETS)], data[i])
             data_instance += [estimators[i].best_params_, estimators[i].best_score_]
-        print  'performer: update_estimator: benchmark =', performer.BENCHMARK+';', data_instance
+        print  'performer: update_estimator: benchmark =', self.BENCHMARK+';', data_instance
         with open(self.file_name('accuracy', self.BENCHMARK), 'a') as f:
             f.write('\t'.join(map(str, data_instance)) + '\n')
         self.estimators = estimators
@@ -317,17 +322,25 @@ class Performer(object):
             return -raw_targets[1]
         else:
             raise NameError('unknown optimization_target')
-    def evaluate_metrics(self, graph, thread_log):
-        actuator.configure_topology(graph)
-        with open(thread_log, 'w+') as f:
-            check_call([actuator.SIMULATOR, self.BENCHMARK], stdout = f)
-        metrics = sensor.extract_targets(thread_log)
+    def extract_targets(self):
+        target_values = list(performer.TARGET_TOKENS)
+        with open(self.SIMULATION_LOG, 'r') as f:
+            for line in f:
+                for index in range(len(performer.TARGET_TOKENS)):
+                    if line.startswith(performer.TARGET_TOKENS[index]):
+                        target_values[index] = float(line.replace(performer.TARGET_TOKENS[index], ''))
+        return target_values
+    def evaluate_metrics(self, graph):
+        self.configure_topology(graph)
+        with open(self.SIMULATION_LOG, 'w+') as f:
+            check_call([self.SIMULATOR, self.BENCHMARK, self.TOPOLOGY], stdout = f)
+        metrics = self.extract_targets()
         print 'performer.evaluate_metrics:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT, metrics
         return metrics
     def string_to_graph(self, graph_string):
         # print 'performer: string_to_graph: graph_string =', graph_string
         graph = Graph(literal_eval(graph_string))
-        performer.process_graph(graph)
+        self.process_graph(graph)
         return graph
     def add_data(self, architecture, graph, metrics):
         print 'performer.add_data:', self.BENCHMARK
@@ -336,36 +349,20 @@ class Performer(object):
         with open(self.DATASET, 'a') as f:
             f.write('\t'.join(map(str, design_instance)) + '\n')
         return
-performer = Performer()
-
-class Sensor(object):
-    def extract_targets(self, thread_log):
-        target_values = list(performer.TARGET_TOKENS)
-        with open(thread_log, 'r') as f:
-            for line in f:
-                for index in range(len(performer.TARGET_TOKENS)):
-                    if line.startswith(performer.TARGET_TOKENS[index]):
-                        target_values[index] = float(line.replace(performer.TARGET_TOKENS[index], ''))
-        return target_values
-sensor = Sensor()
-    
-class Actuator(object):
-    SIMULATOR = 'simulator.out'
-    TOPOLOGY = 'topology.tsv'
     def configure_topology(self, graph):
-        # print 'actuator.configure_topology:', performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT
+        # print 'performer.configure_topology:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT
         adjacency = to_numpy_matrix(graph, dtype = int, nonedge = -1)
         # print adjacency.astype(int)
-        all_disconnected = full((performer.NODE_COUNT, performer.NODE_COUNT), -1, int)
-        side = full((performer.NODE_COUNT, performer.NODE_COUNT), -1, int)
+        all_disconnected = full((self.NODE_COUNT, self.NODE_COUNT), -1, int)
+        side = full((self.NODE_COUNT, self.NODE_COUNT), -1, int)
         fill_diagonal(side, 2)
         configuration = hstack((vstack((all_disconnected, side)), vstack((side, adjacency))))
         configuration = configuration.astype(int)
         savetxt(self.TOPOLOGY, configuration, fmt='%d', delimiter = '\t')
         return
     def initialize_files(self):
-        columns = performer.ATTRIBUTES + performer.METADATA
-        with open(performer.DATASET, 'w+') as f:
+        columns = self.ATTRIBUTES + self.METADATA
+        with open(self.DATASET, 'w+') as f:
             f.write('\t'.join(map(str, columns)) + '\n')
         return
     def draw_graph(self, benchmark, graph, figure_file):
@@ -377,12 +374,12 @@ class Actuator(object):
         return
     def plot_bar(self, dataframe, index, columns, values):
         data = dataframe[[index, columns, values]]
-        print 'actuator: plot_line: ', index, columns, values
+        print 'performer.plot_line: ', index, columns, values
         data = data.pivot(index, columns, values)
         # print data
         axis = data.plot(kind = 'bar', edgecolor = 'none')
         axis.set_ylabel(values)
-        axis.get_figure().savefig(performer.file_name(values, index))
+        axis.get_figure().savefig(self.file_name(values, index))
         return
     def plot_histogram(self, dataframe, column, value, benchmark):
         figure()
@@ -395,12 +392,12 @@ class Actuator(object):
                 count = -1
             new_column = DataFrame({row[column]: Series(histogram(row[value][:count], bins = range(bin_count))[0])})
             distributions = concat([distributions, new_column], axis = 1)
-        print 'actuator: plot_histogram: ', column, value
+        print 'performer.plot_histogram: ', column, value
         axis = distributions.plot(kind = 'bar', edgecolor = 'none')
         axis.set_xlabel(value)
-        axis.get_figure().savefig(performer.file_name(value, benchmark))
+        axis.get_figure().savefig(self.file_name(value, benchmark))
         return
-actuator = Actuator()
+performer = Performer()
 
 class Optimization(SearchProblem):
     def actions(self, state):
@@ -427,41 +424,6 @@ class Optimization(SearchProblem):
         # return estimated_quality
         return weighted_average_path_length(state, 'weight')
 
-def design_freenet(thread_log):
-    restarts = 1
-    for trial in range(restarts):
-        print 'design_freenet:', performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT,  'trial =', trial
-        # performer.update_estimators(4)
-        optimization = Optimization(initial_state = performer.generate_random_graph())
-        final = hill_climbing(optimization, iterations_limit = 200)
-        graph = final.state
-        metrics = performer.evaluate_metrics(graph, thread_log)
-        performer.add_data('freenet', graph, metrics)
-    return
-
-def design_mesh():
-    print 'design_mesh:', performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT
-    graph = performer.generate_grid_graph()
-    metrics = performer.evaluate_metrics(graph, performer.LOG)
-    performer.add_data('mesh', graph, metrics)
-    return
-
-def design_small_world():
-    print 'design_small_world:', performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT
-    graph = performer.generate_small_world_graph()
-    metrics = performer.evaluate_metrics(graph, performer.LOG)
-    performer.add_data('small_world', graph, metrics)
-    return
-
-def design_test():
-    print 'design_test:', performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT
-    raw_topology = loadtxt('topology_test.tsv', int)[-64:, -64:] + 1
-    graph = from_numpy_matrix(raw_topology)
-    performer.process_graph(graph)
-    metrics = performer.evaluate_metrics(graph, performer.LOG)
-    performer.add_data('test_small_world', graph, metrics)
-    return
-
 def view():
     result = DataFrame()
     for benchmark in performer.BENCHMARKS:
@@ -471,7 +433,7 @@ def view():
         evolution['trial'] = evolution.index
         result=result.append(evolution[['trial', 'benchmark'] + performer.TARGETS], ignore_index = True)
     for metric in performer.TARGETS:
-        actuator.plot_line(result, 'trial', 'benchmark', metric)
+        performer.plot_line(result, 'trial', 'benchmark', metric)
     return
 
 def analyze():
@@ -495,22 +457,16 @@ def analyze():
             normlized_values.append(row[attribute]/squeeze(results[mesh_index][attribute]))
         results[normalized_attribute] = normlized_values
     # for attribute in performer.NORMALIZED_ATTRIBUTES:
-    #     actuator.plot_bar(results, 'benchmark', 'architecture', attribute)
+    #     performer.plot_bar(results, 'benchmark', 'architecture', attribute)
     # for benchmark in performer.BENCHMARKS:
     #     mask = results['benchmark'] == benchmark
-    #     actuator.plot_histogram(results[mask], 'architecture/benchmark', 'link_lengths', benchmark)
+    #     performer.plot_histogram(results[mask], 'architecture/benchmark', 'link_lengths', benchmark)
 
     # freenet_topologies = results[results['architecture'] == 'freenet']
-    # map(actuator.draw_graph, freenet_topologies['benchmark'],
+    # map(performer.draw_graph, freenet_topologies['benchmark'],
     #     freenet_topologies['topology'], freenet_topologies['network_figure'])
     return
 
-def serial():
-    # design_freenet(performer.LOG)
-    design_mesh()
-    # design_small_world()
-    # design_test()
-    return
 def parallel():
     thread_count = 24
     thread_logs = ['thread' + str(thread) + '.log' for thread in range(thread_count)]
@@ -525,18 +481,38 @@ def test():
         graph = from_numpy_matrix(raw_topology + 1)
         performer.process_graph(graph)
         print performer.extract_features(graph)
-    # metrics = performer.evaluate_metrics(graph, performer.LOG)
-    # performer.add_data('test_small_world', graph, metrics)
     return
+
+def design(thread_id):
+    architecture = 'mesh'
+    benchmark = performer.BENCHMARKS[thread_id]
+    performer.reinitialize(thread_id, benchmark, 'latency')
+    print 'design:', architecture, performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT
+    if architecture == 'mesh':
+        graph = performer.generate_grid_graph()
+    elif architecture == 'small_world':
+        graph = performer.generate_small_world_graph()
+    elif architecture == 'test':
+        raw_topology = loadtxt('topology_test.tsv', int)[-64:, -64:] + 1
+        graph = from_numpy_matrix(raw_topology)
+        performer.process_graph(graph)
+    elif architecture == 'freenet':
+        # performer.update_estimators(4)
+        optimization = Optimization(initial_state = performer.generate_random_graph())
+        final = hill_climbing(optimization, iterations_limit = 200)
+        graph = final.state
+    metrics = performer.evaluate_metrics(graph)
+    performer.add_data(architecture, graph, metrics)
+    return
+
 if __name__ == '__main__':
-    # actuator.initialize_files()
+    performer.initialize_files()
     performer.initialize(8)
     # test()
-    # for benchmark in ['vips']:
-    for benchmark in performer.BENCHMARKS:
-        performer.reinitialize(benchmark, 'latency')
-        serial()
-        # parallel()
+    thread_count = 8
+    pool = Pool(thread_count)
+    pool.map(design, range(thread_count))
+    # for thread_id in range(thread_count):
+    #     design(thread_id)
     analyze()
-    # view()
     # check_call(['pdflatex', 'architect'])
