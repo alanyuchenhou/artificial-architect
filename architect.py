@@ -18,6 +18,7 @@ from random import choice
 from shlex import split
 from time import strftime
 from datetime import datetime
+from subprocess import call
 from subprocess import check_call
 from simpleai.search import SearchProblem
 from simpleai.search.local import hill_climbing
@@ -118,16 +119,6 @@ class Critic(object):
 class Performer(object):
     SIMULATOR = 'simulator.out'
     DATASET = 'dataset.tsv'
-    TOPOLOGY = None
-    THREAD_ID = None
-    SIMULATION_LOG = None
-    RADIX = None
-    NODE_COUNT = None
-    EDGE_COUNT = None
-    BENCHMARK = None
-    OPTIMIZATION_TARGET = None
-    TOTAL_TRAFFIC = None
-    TRAFFIC = None
     NODE_WEIGHT = 3
     DIMENSION = 2
     DEGREE_MAX = 7
@@ -149,9 +140,6 @@ class Performer(object):
     ATTRIBUTES = TARGETS + FEATURES
     NORMALIZED_ATTRIBUTES = ['normalized_' + a  for a in ATTRIBUTES]
     METADATA = ['time', 'architecture', 'benchmark', 'optimization_target', 'topology']
-    random_edge_generator = None
-    scaler = StandardScaler()
-    estimators = []
     def extract_features(self, graph):
         # print 'performer.extract_features:'
         raw_features = [average_shortest_path_length(graph, 'weight'),
@@ -186,20 +174,21 @@ class Performer(object):
         else:
             raise NameError('no file for quantity: ' + quantity)
         return name
-    def initialize(self, radix):
+    def initialize(self, radix, edge_count):
         self.RADIX = radix
         self.NODE_COUNT = self.RADIX ** self.DIMENSION
-        self.EDGE_COUNT = int(self.NODE_COUNT * 2)
+        self.EDGE_COUNT = edge_count
         return
-    def reinitialize(self, thread_id, benchmark, optimization_target):
+    def reinitialize(self, thread_id, benchmark, optimization_target, beta):
+        if (benchmark not in self.BENCHMARKS):
+            raise NameError('unknown benchmark: ' + benchmark)
+        if (optimization_target not in self.TARGETS):
+            raise NameError('unknown optimization_target: ' + optimization_target)
+        self.BENCHMARK = benchmark
+        self.TRAFFIC_FILE = 'traffic_' + benchmark + '.tsv'
         self.THREAD_ID = thread_id
         self.TOPOLOGY = 'topology' + str(thread_id) +'.tsv'
         self.SIMULATION_LOG = 'simulation' + str(thread_id) + '.log'
-        if (benchmark not in self.BENCHMARKS):
-            raise NameError('unknown benchmark: ' + benchmark)
-        self.BENCHMARK = benchmark
-        if (optimization_target not in self.TARGETS):
-            raise NameError('unknown optimization_target: ' + optimization_target)
         self.OPTIMIZATION_TARGET = optimization_target
         distances = zeros((self.NODE_COUNT, self.NODE_COUNT))
         edge_indices = zeros((self.NODE_COUNT, self.NODE_COUNT), int)
@@ -207,17 +196,17 @@ class Performer(object):
             for node2 in range(self.NODE_COUNT):
                 distances[node1][node2] = self.edge_weight(node1, node2)
                 edge_indices[node1][node2] = self.edge_index(node1, node2)
-        alpha = distances**(-4)
+        alpha = distances**(-beta)
         fill_diagonal(alpha, 0)
         if self.RADIX == 8:
-            raw_traffic = loadtxt('traffic_' + self.BENCHMARK + '.tsv')
+            raw_traffic = loadtxt(self.TRAFFIC_FILE)
         else:
             raw_traffic = rand(self.NODE_COUNT,self.NODE_COUNT)
         raw_traffic +=  raw_traffic.transpose()
         self.TOTAL_TRAFFIC = raw_traffic.sum().sum()
         self.TRAFFIC = raw_traffic
-        raw_probabilities = raw_traffic * alpha
-        # raw_probabilities = alpha
+        # raw_probabilities = raw_traffic * alpha
+        raw_probabilities = alpha
         probabilities = raw_probabilities / (raw_probabilities.sum().sum())
         self.random_edge_generator = rv_discrete(name = 'custm', values = (edge_indices, probabilities))
         print 'performer.initialize:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT, self.TOTAL_TRAFFIC
@@ -248,7 +237,7 @@ class Performer(object):
         return center
     def constraints_satisfied(self, graph):
         degree_max = max(graph.degree().values())
-        print 'performer.constraints_satisfied:', degree_max, graph.number_of_edges(), is_connected(graph)
+        # print 'performer.constraints_satisfied:', degree_max, graph.number_of_edges(), is_connected(graph)
         if graph.number_of_edges() <= self.EDGE_COUNT and degree_max <= self.DEGREE_MAX and is_connected(graph):
             return True
         else:
@@ -303,6 +292,7 @@ class Performer(object):
         return weighted_average
     def load_data(self, dataset, columns):
         raw_dataset = loadtxt(dataset, usecols = columns, skiprows = 1)
+        self.scaler = StandardScaler()
         self.scaler.fit(raw_dataset)
         scaled_dataset = self.scaler.transform(raw_dataset)
         split_dataset = map(squeeze, hsplit(scaled_dataset, range(1,len(self.TARGETS)+1)))
@@ -323,7 +313,7 @@ class Performer(object):
         else:
             raise NameError('unknown optimization_target')
     def extract_targets(self):
-        target_values = list(performer.TARGET_TOKENS)
+        target_values = [None] * len(performer.TARGETS)
         with open(self.SIMULATION_LOG, 'r') as f:
             for line in f:
                 for index in range(len(performer.TARGET_TOKENS)):
@@ -333,7 +323,7 @@ class Performer(object):
     def evaluate_metrics(self, graph):
         self.configure_topology(graph)
         with open(self.SIMULATION_LOG, 'w+') as f:
-            check_call([self.SIMULATOR, self.BENCHMARK, self.TOPOLOGY], stdout = f)
+            call([self.SIMULATOR, self.BENCHMARK, self.TOPOLOGY], stdout = f)
         metrics = self.extract_targets()
         print 'performer.evaluate_metrics:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT, metrics
         return metrics
@@ -343,7 +333,7 @@ class Performer(object):
         self.process_graph(graph)
         return graph
     def add_data(self, architecture, graph, metrics):
-        print 'performer.add_data:', self.BENCHMARK
+        print 'performer.add_data:', self.BENCHMARK, metrics
         metadata = [datetime.now(), architecture, self.BENCHMARK, self.OPTIMIZATION_TARGET, to_dict_of_dicts(graph)]
         design_instance = metrics + self.extract_features(graph) + metadata
         with open(self.DATASET, 'a') as f:
@@ -397,6 +387,16 @@ class Performer(object):
         axis.set_xlabel(value)
         axis.get_figure().savefig(self.file_name(value, benchmark))
         return
+    def view(self, data):
+        result = DataFrame()
+        attributes = ['benchmark'] + self.TARGETS
+        for benchmark in self.BENCHMARKS:
+            evolution = data[data['benchmark'] == benchmark][attributes].cummin().reindex()
+            evolution['trial'] = evolution.index
+            result=result.append(evolution, ignore_index = True)
+        for metric in self.TARGETS:
+            self.plot_line(result, 'trial', 'benchmark', metric)
+        return
 performer = Performer()
 
 class Optimization(SearchProblem):
@@ -423,23 +423,7 @@ class Optimization(SearchProblem):
         # estimated_quality = performer.evaluate_quality(estimated_metrics)
         # return estimated_quality
         return weighted_average_path_length(state, 'weight')
-
-def view():
-    result = DataFrame()
-    for benchmark in performer.BENCHMARKS:
-        data = read_csv(performer.DATASET, sep = '\t', skipinitialspace = True)
-        evolution = data.cummin()
-        evolution = data
-        evolution['trial'] = evolution.index
-        result=result.append(evolution[['trial', 'benchmark'] + performer.TARGETS], ignore_index = True)
-    for metric in performer.TARGETS:
-        performer.plot_line(result, 'trial', 'benchmark', metric)
-    return
-
 def analyze():
-    # metrics = ['latency', 'energy']
-    metrics = ['latency']
-    results = DataFrame()
     data = read_csv(performer.DATASET, sep = '\t', skipinitialspace = True)
     attributes = performer.METADATA + performer.ATTRIBUTES
     print 'analyze:', data.columns.values
@@ -447,8 +431,8 @@ def analyze():
     data['link_lengths'] = [get_edge_attributes(g, 'length').values() for g in data['graph']]
     data['network_figure'] = [performer.file_name('network_figure', b) for b in data['benchmark']]
     data['architecture/benchmark'] = data['architecture'] + '/' + data['benchmark']
-    data.sort('latency', inplace = True)
-    print data[data['architecture'] == 'mesh'][['architecture', 'benchmark', 'latency']]
+    data.sort('benchmark', inplace = True)
+    print data[['architecture', 'benchmark', 'latency']]
     results = data.ix[data.groupby(['benchmark', 'architecture'])['latency'].idxmin()]
     for normalized_attribute, attribute in zip(performer.NORMALIZED_ATTRIBUTES, performer.ATTRIBUTES):
         normlized_values = []
@@ -461,20 +445,13 @@ def analyze():
     # for benchmark in performer.BENCHMARKS:
     #     mask = results['benchmark'] == benchmark
     #     performer.plot_histogram(results[mask], 'architecture/benchmark', 'link_lengths', benchmark)
-
     # freenet_topologies = results[results['architecture'] == 'freenet']
     # map(performer.draw_graph, freenet_topologies['benchmark'],
     #     freenet_topologies['topology'], freenet_topologies['network_figure'])
     return
 
-def parallel():
-    thread_count = 24
-    thread_logs = ['thread' + str(thread) + '.log' for thread in range(thread_count)]
-    pool = Pool(thread_count)
-    pool.map(design_freenet, thread_logs)
-    return
 def test():
-    performer.reinitialize('lu', 'latency')
+    performer.reinitialize('lu', 'latency', 1)
     print performer.FEATURES
     for f in ['topology_test.tsv', 'topology.tsv']:
         raw_topology = loadtxt(f, int)[-64:, -64:]
@@ -484,12 +461,14 @@ def test():
     return
 
 def design(thread_id):
-    architecture = 'mesh'
+    architecture = 'small_world'
     benchmark = performer.BENCHMARKS[thread_id]
-    performer.reinitialize(thread_id, benchmark, 'latency')
+    performer.reinitialize(thread_id, benchmark, 'latency', uniform(0, 10))
     print 'design:', architecture, performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT
     if architecture == 'mesh':
         graph = performer.generate_grid_graph()
+    elif architecture == 'random':
+        graph = performer.generate_random_graph()
     elif architecture == 'small_world':
         graph = performer.generate_small_world_graph()
     elif architecture == 'test':
@@ -502,17 +481,19 @@ def design(thread_id):
         final = hill_climbing(optimization, iterations_limit = 200)
         graph = final.state
     metrics = performer.evaluate_metrics(graph)
-    performer.add_data(architecture, graph, metrics)
+    if metrics[0] != None:
+        performer.add_data(architecture, graph, metrics)
     return
 
 if __name__ == '__main__':
-    performer.initialize_files()
-    performer.initialize(8)
-    # test()
+    # performer.initialize_files()
+    performer.initialize(8, 112)
     thread_count = 8
     pool = Pool(thread_count)
-    pool.map(design, range(thread_count))
+    # while True:
+    #     pool.map(design, range(thread_count))
     # for thread_id in range(thread_count):
     #     design(thread_id)
+    # test()
     analyze()
     # check_call(['pdflatex', 'architect'])
