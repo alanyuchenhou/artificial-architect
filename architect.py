@@ -136,6 +136,8 @@ class Performer(object):
                 'edge_count',
                 'average_clustering',
                 'small_world_ness',
+                'alpha',
+                'beta',
                 'total_traffic']
     ATTRIBUTES = TARGETS + FEATURES
     NORMALIZED_ATTRIBUTES = ['normalized_' + a  for a in ATTRIBUTES]
@@ -153,6 +155,8 @@ class Performer(object):
                         graph.number_of_edges(),
                         average_clustering(graph),
                         average_clustering(graph) / average_shortest_path_length(graph, 'weight'),
+                        self.ALPHA,
+                        self.BETA,
                         self.TOTAL_TRAFFIC]
         return raw_features
     def position(self, node_index):
@@ -179,7 +183,7 @@ class Performer(object):
         self.NODE_COUNT = self.RADIX ** self.DIMENSION
         self.EDGE_COUNT = edge_count
         return
-    def reinitialize(self, thread_id, benchmark, optimization_target, beta):
+    def reinitialize(self, thread_id, benchmark, optimization_target, alpha, beta):
         if (benchmark not in self.BENCHMARKS):
             raise NameError('unknown benchmark: ' + benchmark)
         if (optimization_target not in self.TARGETS):
@@ -196,8 +200,6 @@ class Performer(object):
             for node2 in range(self.NODE_COUNT):
                 distances[node1][node2] = self.edge_weight(node1, node2)
                 edge_indices[node1][node2] = self.edge_index(node1, node2)
-        alpha = distances**(-beta)
-        fill_diagonal(alpha, 0)
         if self.RADIX == 8:
             raw_traffic = loadtxt(self.TRAFFIC_FILE)
         else:
@@ -205,8 +207,11 @@ class Performer(object):
         raw_traffic +=  raw_traffic.transpose()
         self.TOTAL_TRAFFIC = raw_traffic.sum().sum()
         self.TRAFFIC = raw_traffic
-        # raw_probabilities = raw_traffic * alpha
-        raw_probabilities = alpha
+        self.ALPHA = alpha
+        self.BETA = beta
+        super_distances = distances ** (- alpha)
+        fill_diagonal(super_distances, 0)
+        raw_probabilities = (super_distances) * (raw_traffic ** beta)
         probabilities = raw_probabilities / (raw_probabilities.sum().sum())
         self.random_edge_generator = rv_discrete(name = 'custm', values = (edge_indices, probabilities))
         print 'performer.initialize:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT, self.TOTAL_TRAFFIC
@@ -267,20 +272,24 @@ class Performer(object):
                 self.process_graph(graph)
                 return graph
     def generate_small_world_graph(self):
-        print 'performer.generate_small_world_graph:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT
-        while True:
+        for j in range(10):
             graph = Graph()
             for i in range(self.NODE_COUNT):
                 graph.add_node(i)
-            while graph.number_of_edges() < self.EDGE_COUNT:
-                source, destination = self.edge_nodes(self.random_edge_generator.rvs())
-                graph.add_edge(source, destination, length = self.link_length(source, destination),
-                               weight = self.edge_weight(source, destination))
-                if max(graph.degree().values()) > self.DEGREE_MAX:
-                    graph.remove_edge(source, destination)
+            for k in range(100000000):
+                if graph.number_of_edges() < self.EDGE_COUNT:
+                    source, destination = self.edge_nodes(self.random_edge_generator.rvs())
+                    graph.add_edge(source, destination, length = self.link_length(source, destination),
+                                   weight = self.edge_weight(source, destination))
+                    if max(graph.degree().values()) > self.DEGREE_MAX:
+                        graph.remove_edge(source, destination)
+                else:
+                    break
             if self.constraints_satisfied(graph):
                 self.process_graph(graph)
                 return graph
+            else:
+                print 'performer.generate_small_world_graph:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT, j
     def weighted_average_path_length(self, traffic, graph):
         # print 'performer.weighted_average_path_length:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT
         raw_path_lengths = shortest_path_length(graph, weight = 'weight')
@@ -422,24 +431,27 @@ class Optimization(SearchProblem):
         # estimated_metrics = performer.estimate_metrics(raw_features)
         # estimated_quality = performer.evaluate_quality(estimated_metrics)
         # return estimated_quality
-        return weighted_average_path_length(state, 'weight')
+        return (-performer.weighted_average_path_length(performer.TRAFFIC, state))
 def analyze():
     data = read_csv(performer.DATASET, sep = '\t', skipinitialspace = True)
     attributes = performer.METADATA + performer.ATTRIBUTES
     print 'analyze:', data.columns.values
     data['graph'] = [performer.string_to_graph(t) for t in data['topology']]
-    data['link_lengths'] = [get_edge_attributes(g, 'length').values() for g in data['graph']]
-    data['network_figure'] = [performer.file_name('network_figure', b) for b in data['benchmark']]
-    data['architecture/benchmark'] = data['architecture'] + '/' + data['benchmark']
-    data.sort('benchmark', inplace = True)
-    print data[['architecture', 'benchmark', 'latency']]
-    results = data.ix[data.groupby(['benchmark', 'architecture'])['latency'].idxmin()]
-    for normalized_attribute, attribute in zip(performer.NORMALIZED_ATTRIBUTES, performer.ATTRIBUTES):
-        normlized_values = []
-        for index, row in results.iterrows():
-            mesh_index = (results['architecture'] == 'mesh') & (results['benchmark'] == row['benchmark'])
-            normlized_values.append(row[attribute]/squeeze(results[mesh_index][attribute]))
-        results[normalized_attribute] = normlized_values
+    data['average_hop_count'] = [average_shortest_path_length(g) for g in data['graph']]
+    # data['link_lengths'] = [get_edge_attributes(g, 'length').values() for g in data['graph']]
+    # data['network_figure'] = [performer.file_name('network_figure', b) for b in data['benchmark']]
+    # data['architecture/benchmark'] = data['architecture'] + '/' + data['benchmark']
+    attributes = ['latency', 'average_path_length','average_hop_count']
+    results = data
+    # results = data.ix[data.groupby(['benchmark', 'architecture'])['latency'].idxmax()]
+    results.sort('latency', inplace = True)
+    print results[attributes]
+    # for normalized_attribute, attribute in zip(performer.NORMALIZED_ATTRIBUTES, performer.ATTRIBUTES):
+    #     normlized_values = []
+    #     for index, row in results.iterrows():
+    #         mesh_index = (results['architecture'] == 'mesh') & (results['benchmark'] == row['benchmark'])
+    #         normlized_values.append(row[attribute]/squeeze(results[mesh_index][attribute]))
+    #     results[normalized_attribute] = normlized_values
     # for attribute in performer.NORMALIZED_ATTRIBUTES:
     #     performer.plot_bar(results, 'benchmark', 'architecture', attribute)
     # for benchmark in performer.BENCHMARKS:
@@ -451,47 +463,41 @@ def analyze():
     return
 
 def test():
-    performer.reinitialize('lu', 'latency', 1)
-    print performer.FEATURES
-    for f in ['topology_test.tsv', 'topology.tsv']:
-        raw_topology = loadtxt(f, int)[-64:, -64:]
-        graph = from_numpy_matrix(raw_topology + 1)
-        performer.process_graph(graph)
-        print performer.extract_features(graph)
-    return
+    a = 4
+    return 4
 
 def design(thread_id):
-    architecture = 'small_world'
-    benchmark = performer.BENCHMARKS[thread_id]
-    performer.reinitialize(thread_id, benchmark, 'latency', uniform(0, 10))
-    print 'design:', architecture, performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT
-    if architecture == 'mesh':
-        graph = performer.generate_grid_graph()
-    elif architecture == 'random':
-        graph = performer.generate_random_graph()
-    elif architecture == 'small_world':
-        graph = performer.generate_small_world_graph()
-    elif architecture == 'test':
-        raw_topology = loadtxt('topology_test.tsv', int)[-64:, -64:] + 1
-        graph = from_numpy_matrix(raw_topology)
-        performer.process_graph(graph)
-    elif architecture == 'freenet':
-        # performer.update_estimators(4)
-        optimization = Optimization(initial_state = performer.generate_random_graph())
-        final = hill_climbing(optimization, iterations_limit = 200)
-        graph = final.state
-    metrics = performer.evaluate_metrics(graph)
-    if metrics[0] != None:
-        performer.add_data(architecture, graph, metrics)
+    architecture = 'freenet'
+    # benchmark = performer.BENCHMARKS[thread_id]
+    benchmark = 'fft'
+    while True:
+        performer.reinitialize(thread_id, benchmark, 'latency', uniform(2, 9), uniform(2, 9))
+        print 'design:', architecture, performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT
+        if architecture == 'mesh':
+            graph = performer.generate_grid_graph()
+        elif architecture == 'small_world':
+            graph = performer.generate_small_world_graph()
+        elif architecture == 'test':
+            raw_topology = loadtxt('topology_test.tsv', int)[-64:, -64:]
+            graph = from_numpy_matrix(raw_topology + 1)
+            performer.process_graph(graph)
+        elif architecture == 'freenet':
+            # performer.update_estimators(4)
+            optimization = Optimization(initial_state = performer.generate_grid_graph())
+            final = hill_climbing(optimization)
+            graph = final.state
+        if graph != None:
+            metrics = performer.evaluate_metrics(graph)
+            if metrics[0] != None:
+                performer.add_data(architecture, graph, metrics)
     return
 
 if __name__ == '__main__':
     # performer.initialize_files()
-    performer.initialize(8, 112)
-    thread_count = 8
+    performer.initialize(8, 120)
+    thread_count = 24
     pool = Pool(thread_count)
-    # while True:
-    #     pool.map(design, range(thread_count))
+    # pool.map(design, range(thread_count))
     # for thread_id in range(thread_count):
     #     design(thread_id)
     # test()
