@@ -327,27 +327,34 @@ class Performer(object):
         else:
             raise NameError('unknown optimization_target')
     def extract_targets(self):
-        target_values = [None] * len(performer.TARGETS)
+        metrics = [None] * len(performer.TARGETS)
         with open(self.SIMULATION_LOG, 'r') as f:
             for line in f:
                 for index in range(len(performer.TARGET_TOKENS)):
                     if line.startswith(performer.TARGET_TOKENS[index]):
-                        target_values[index] = float(line.replace(performer.TARGET_TOKENS[index], ''))
-        return target_values
+                        metrics[index] = float(line.replace(performer.TARGET_TOKENS[index], ''))
+        for metric in metrics:
+            if metric == None:
+                print 'performer.extract_targets: targets not found; simulation failed'
+                return None
+        return metrics
     def evaluate_metrics(self, graph):
         self.configure_topology(graph)
         with open(self.SIMULATION_LOG, 'w+') as f:
             call([self.SIMULATOR, self.BENCHMARK, self.TOPOLOGY], stdout = f)
         metrics = self.extract_targets()
-        print 'performer.evaluate_metrics:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT, metrics
+        # print 'performer.evaluate_metrics:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT, metrics
         return metrics
     def string_to_graph(self, graph_string):
         # print 'performer: string_to_graph: graph_string =', graph_string
         graph = Graph(literal_eval(graph_string))
         self.process_graph(graph)
         return graph
-    def add_data(self, architecture, graph, metrics):
-        print 'performer.add_data:', self.BENCHMARK, metrics
+    def update_database(self, architecture, graph):
+        metrics = performer.evaluate_metrics(graph)
+        if metrics == None:
+            return
+        print 'performer.update_database:', self.BENCHMARK, metrics
         metadata = [datetime.now(), architecture, self.BENCHMARK, self.OPTIMIZATION_TARGET, to_dict_of_dicts(graph)]
         design_instance = metrics + self.extract_features(graph) + metadata
         with open(self.DATASET, 'a') as f:
@@ -439,6 +446,7 @@ class Optimization(SearchProblem):
         return (-performer.weighted_average_path_length(performer.TRAFFIC, state))
 def analyze():
     data = read_csv(performer.DATASET, sep = '\t', skipinitialspace = True)
+    # data = read_csv('dataset_grid.tsv', sep = '\t', skipinitialspace = True)
     attributes = performer.METADATA + performer.ATTRIBUTES
     print 'analyze:', data.columns.values
     data['graph'] = [performer.string_to_graph(t) for t in data['topology']]
@@ -462,9 +470,9 @@ def analyze():
     # for benchmark in performer.BENCHMARKS:
     #     mask = results['benchmark'] == benchmark
     #     performer.plot_histogram(results[mask], 'architecture/benchmark', 'link_lengths', benchmark)
-    # freenet_topologies = results[results['architecture'] == 'freenet']
-    # map(performer.draw_graph, freenet_topologies['benchmark'],
-    #     freenet_topologies['topology'], freenet_topologies['network_figure'])
+    # xnet_data = results[results['architecture'] == 'xnet']
+    # map(performer.draw_graph, xnet_data['benchmark'],
+    #     xnet_data['topology'], xnet_data['network_figure'])
     return
 
 def test():
@@ -476,12 +484,11 @@ def test():
     return
 
 def design(thread_id):
-    architecture = 'freenet'
+    architecture = 'small_world'
     # benchmark = performer.BENCHMARKS[thread_id]
     benchmark = 'fft'
     while True:
         performer.reinitialize(thread_id, benchmark, 'latency', uniform(0, 10), uniform(0, 10))
-        print 'design:', architecture, performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT
         if architecture == 'mesh':
             graph = performer.generate_grid_graph()
         elif architecture == 'random':
@@ -492,15 +499,13 @@ def design(thread_id):
             raw_topology = loadtxt('topology_test.tsv', int)[-64:, -64:]
             graph = from_numpy_matrix(raw_topology + 1)
             performer.process_graph(graph)
-        elif architecture == 'freenet':
-            # performer.update_estimators(4)
-            optimization = Optimization(initial_state = performer.generate_small_world_graph())
-            final = hill_climbing(optimization)
-            graph = final.state
+        performer.update_database(architecture, graph)
+        # performer.update_estimators(4)
+        optimization = Optimization(initial_state = graph)
+        final = hill_climbing(optimization)
+        graph = final.state
         if graph != None:
-            metrics = performer.evaluate_metrics(graph)
-            if metrics[0] != None:
-                performer.add_data(architecture, graph, metrics)
+            performer.update_database('xnet', graph)
     return
 
 if __name__ == '__main__':
@@ -508,9 +513,9 @@ if __name__ == '__main__':
     performer.initialize(8, 112)
     thread_count = 24
     pool = Pool(thread_count)
-    # pool.map(design, range(thread_count))
+    pool.map(design, range(thread_count))
     # for thread_id in range(thread_count):
     #     design(thread_id)
-    test()
+    # test()
     # analyze()
     # check_call(['pdflatex', 'architect'])
