@@ -13,8 +13,8 @@ from fileinput import input
 from itertools import combinations
 from functools import reduce
 from operator import mul
+import random
 from random import uniform
-from random import choice
 from shlex import split
 from time import strftime
 from datetime import datetime
@@ -124,7 +124,7 @@ class Performer(object):
     DEGREE_MAX = 7
     BENCHMARKS = ['fft', 'lu', 'radix', 'water', 'canneal', 'dedup', 'fluidanimate', 'vips']
     TARGETS = ['latency', 'energy']
-    TARGET_TOKENS = ['Avg. Message Latency:', 'Average energy per message done:']
+    TARGET_TOKENS = ['Avg. Network Latency:', 'Average energy per message done:']
     FEATURES = ['average_path_length',
                 'weighted_average_path_length',
                 'average_link_length',
@@ -182,6 +182,12 @@ class Performer(object):
         self.RADIX = radix
         self.NODE_COUNT = self.RADIX ** self.DIMENSION
         self.EDGE_COUNT = edge_count
+        self.distances = zeros((self.NODE_COUNT, self.NODE_COUNT))
+        self.edge_indices = zeros((self.NODE_COUNT, self.NODE_COUNT), int)
+        for node1 in range(self.NODE_COUNT):
+            for node2 in range(self.NODE_COUNT):
+                self.distances[node1][node2] = self.edge_weight(node1, node2)
+                self.edge_indices[node1][node2] = self.edge_index(node1, node2)
         return
     def reinitialize(self, thread_id, benchmark, optimization_target, alpha, beta):
         if (benchmark not in self.BENCHMARKS):
@@ -194,12 +200,6 @@ class Performer(object):
         self.TOPOLOGY = 'topology' + str(thread_id) +'.tsv'
         self.SIMULATION_LOG = 'simulation' + str(thread_id) + '.log'
         self.OPTIMIZATION_TARGET = optimization_target
-        distances = zeros((self.NODE_COUNT, self.NODE_COUNT))
-        edge_indices = zeros((self.NODE_COUNT, self.NODE_COUNT), int)
-        for node1 in range(self.NODE_COUNT):
-            for node2 in range(self.NODE_COUNT):
-                distances[node1][node2] = self.edge_weight(node1, node2)
-                edge_indices[node1][node2] = self.edge_index(node1, node2)
         if self.RADIX == 8:
             raw_traffic = loadtxt(self.TRAFFIC_FILE)
         else:
@@ -209,11 +209,10 @@ class Performer(object):
         self.TRAFFIC = raw_traffic
         self.ALPHA = alpha
         self.BETA = beta
-        super_distances = distances ** (- alpha)
+        super_distances = self.distances ** (- alpha)
         fill_diagonal(super_distances, 0)
         raw_probabilities = (super_distances) * (raw_traffic ** beta)
-        probabilities = raw_probabilities / (raw_probabilities.sum().sum())
-        self.random_edge_generator = rv_discrete(name = 'custm', values = (edge_indices, probabilities))
+        self.probabilities = raw_probabilities / (raw_probabilities.sum().sum())
         print 'performer.initialize:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT, self.TOTAL_TRAFFIC
         return
     def update_estimators(self, accuracy):
@@ -272,24 +271,30 @@ class Performer(object):
                 self.process_graph(graph)
                 return graph
     def generate_small_world_graph(self):
-        for j in range(10):
-            graph = Graph()
-            for i in range(self.NODE_COUNT):
-                graph.add_node(i)
-            for k in range(100000000):
-                if graph.number_of_edges() < self.EDGE_COUNT:
-                    source, destination = self.edge_nodes(self.random_edge_generator.rvs())
-                    graph.add_edge(source, destination, length = self.link_length(source, destination),
-                                   weight = self.edge_weight(source, destination))
-                    if max(graph.degree().values()) > self.DEGREE_MAX:
-                        graph.remove_edge(source, destination)
-                else:
-                    break
+        max_edges = self.NODE_COUNT*(self.NODE_COUNT-1)/2
+        if self.EDGE_COUNT > max_edges:
+            return complete_graph(self.NODE_COUNT)
+        graph = Graph()
+        graph.add_nodes_from(range(self.NODE_COUNT))
+        edges = performer.edge_indices.flatten()
+        probabilities = performer.probabilities.flatten()
+        for trial in range(len(edges)-9):
+            edge_index = numpy.random.choice(edges, p = probabilities)
+            source, destination = self.edge_nodes(edge_index)
+            graph.add_edge(source, destination, length = self.link_length(source, destination),
+                           weight = self.edge_weight(source, destination))
+            probabilities[edge_index] = 0
+            probabilities /= sum(probabilities)
+            if max(graph.degree().values()) > self.DEGREE_MAX:
+                graph.remove_edge(source, destination)
+            if graph.number_of_edges() > self.EDGE_COUNT:
+                victim = random.choice(graph.edges())
+                graph.remove_edge(victim[0], victim[1])
             if self.constraints_satisfied(graph):
+                print 'performer.generate_small_world_graph:',
+                print self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT, trial
                 self.process_graph(graph)
                 return graph
-            else:
-                print 'performer.generate_small_world_graph:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT, j
     def weighted_average_path_length(self, traffic, graph):
         # print 'performer.weighted_average_path_length:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT
         raw_path_lengths = shortest_path_length(graph, weight = 'weight')
@@ -412,7 +417,7 @@ class Optimization(SearchProblem):
     def actions(self, state):
         successors = []
         successor1 = state.copy()
-        victim = choice(successor1.edges())
+        victim = random.choice(successor1.edges())
         successor1.remove_edge(victim[0], victim[1])
         for source in state.nodes():
             for destination in state.nodes():
@@ -441,7 +446,7 @@ def analyze():
     # data['link_lengths'] = [get_edge_attributes(g, 'length').values() for g in data['graph']]
     # data['network_figure'] = [performer.file_name('network_figure', b) for b in data['benchmark']]
     # data['architecture/benchmark'] = data['architecture'] + '/' + data['benchmark']
-    attributes = ['latency', 'average_path_length','average_hop_count']
+    attributes = ['edge_count', 'latency', 'average_path_length','average_hop_count']
     results = data
     # results = data.ix[data.groupby(['benchmark', 'architecture'])['latency'].idxmax()]
     results.sort('latency', inplace = True)
@@ -463,18 +468,24 @@ def analyze():
     return
 
 def test():
-    a = 4
-    return 4
+    print performer.FEATURES
+    for i in range(9):
+        performer.reinitialize(0, 'fft', 'latency', uniform(0, 10), uniform(0, 10))
+        graph = performer.generate_small_world_graph()
+        print performer.extract_features(graph)
+    return
 
 def design(thread_id):
     architecture = 'freenet'
     # benchmark = performer.BENCHMARKS[thread_id]
     benchmark = 'fft'
     while True:
-        performer.reinitialize(thread_id, benchmark, 'latency', uniform(2, 9), uniform(2, 9))
+        performer.reinitialize(thread_id, benchmark, 'latency', uniform(0, 10), uniform(0, 10))
         print 'design:', architecture, performer.BENCHMARK, performer.NODE_COUNT, performer.EDGE_COUNT
         if architecture == 'mesh':
             graph = performer.generate_grid_graph()
+        elif architecture == 'random':
+            graph = performer.generate_random_graph()
         elif architecture == 'small_world':
             graph = performer.generate_small_world_graph()
         elif architecture == 'test':
@@ -483,7 +494,7 @@ def design(thread_id):
             performer.process_graph(graph)
         elif architecture == 'freenet':
             # performer.update_estimators(4)
-            optimization = Optimization(initial_state = performer.generate_grid_graph())
+            optimization = Optimization(initial_state = performer.generate_small_world_graph())
             final = hill_climbing(optimization)
             graph = final.state
         if graph != None:
@@ -494,12 +505,12 @@ def design(thread_id):
 
 if __name__ == '__main__':
     # performer.initialize_files()
-    performer.initialize(8, 120)
+    performer.initialize(8, 112)
     thread_count = 24
     pool = Pool(thread_count)
     # pool.map(design, range(thread_count))
     # for thread_id in range(thread_count):
     #     design(thread_id)
-    # test()
-    analyze()
+    test()
+    # analyze()
     # check_call(['pdflatex', 'architect'])
