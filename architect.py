@@ -354,7 +354,7 @@ class Performer(object):
         metrics = performer.evaluate_metrics(graph)
         if metrics == None:
             return
-        print 'performer.update_database:', self.BENCHMARK, metrics
+        print 'performer.update_database:', self.BENCHMARK, architecture, metrics
         metadata = [datetime.now(), architecture, self.BENCHMARK, self.OPTIMIZATION_TARGET, to_dict_of_dicts(graph)]
         design_instance = metrics + self.extract_features(graph) + metadata
         with open(self.DATASET, 'a') as f:
@@ -424,8 +424,9 @@ class Optimization(SearchProblem):
     def actions(self, state):
         successors = []
         successor1 = state.copy()
-        victim = random.choice(successor1.edges())
-        successor1.remove_edge(victim[0], victim[1])
+        while successor1.number_of_edges() >= performer.EDGE_COUNT:
+            victim = random.choice(successor1.edges())
+            successor1.remove_edge(victim[0], victim[1])
         for source in state.nodes():
             for destination in state.nodes():
                 successor = successor1.copy()
@@ -434,7 +435,7 @@ class Optimization(SearchProblem):
                 successor.remove_edges_from(successor.selfloop_edges())
                 if performer.constraints_satisfied(successor):
                     successors.append(successor)
-        print 'optimization.actions: successor_count:', len(successors)
+        print 'optimization.actions:', len(successors)
         return successors
     def result(self, state, action):
         return action
@@ -447,17 +448,18 @@ class Optimization(SearchProblem):
 def analyze():
     data = read_csv(performer.DATASET, sep = '\t', skipinitialspace = True)
     # data = read_csv('dataset_grid.tsv', sep = '\t', skipinitialspace = True)
-    attributes = performer.METADATA + performer.ATTRIBUTES
+    # attributes = performer.METADATA + performer.ATTRIBUTES
     print 'analyze:', data.columns.values
-    data['graph'] = [performer.string_to_graph(t) for t in data['topology']]
-    data['average_hop_count'] = [average_shortest_path_length(g) for g in data['graph']]
+    # data['graph'] = [performer.string_to_graph(t) for t in data['topology']]
+    # data['average_hop_count'] = [average_shortest_path_length(g) for g in data['graph']]
     # data['link_lengths'] = [get_edge_attributes(g, 'length').values() for g in data['graph']]
     # data['network_figure'] = [performer.file_name('network_figure', b) for b in data['benchmark']]
     # data['architecture/benchmark'] = data['architecture'] + '/' + data['benchmark']
-    attributes = ['edge_count', 'latency', 'average_path_length','average_hop_count']
+    attributes = ['edge_count', 'latency', 'average_path_length','weighted_average_path_length']
     results = data
-    # results = data.ix[data.groupby(['benchmark', 'architecture'])['latency'].idxmax()]
+    # results = data.ix[data.groupby(['benchmark', 'architecture'])['latency'].idxmin()]
     results.sort('latency', inplace = True)
+    print results.head()
     print results[attributes]
     # for normalized_attribute, attribute in zip(performer.NORMALIZED_ATTRIBUTES, performer.ATTRIBUTES):
     #     normlized_values = []
@@ -470,24 +472,25 @@ def analyze():
     # for benchmark in performer.BENCHMARKS:
     #     mask = results['benchmark'] == benchmark
     #     performer.plot_histogram(results[mask], 'architecture/benchmark', 'link_lengths', benchmark)
-    # xnet_data = results[results['architecture'] == 'xnet']
-    # map(performer.draw_graph, xnet_data['benchmark'],
-    #     xnet_data['topology'], xnet_data['network_figure'])
+    # optimum_data = results[results['architecture'] == 'optimum']
+    # map(performer.draw_graph, optimum_data['benchmark'],
+    #     optimum_data['topology'], optimum_data['network_figure'])
     return
 
-def test():
-    print performer.FEATURES
-    for i in range(9):
-        performer.reinitialize(0, 'fft', 'latency', uniform(0, 10), uniform(0, 10))
-        graph = performer.generate_small_world_graph()
-        print performer.extract_features(graph)
+def test(thread_count):
+    for i in range(10):
+        victim = random.choice(range(1000000))
+        print victim
+    # print performer.FEATURES
+    # for i in range(9):
+    #     performer.reinitialize(0, 'fft', 'latency', uniform(0, 10), uniform(0, 10))
+    #     graph = performer.generate_small_world_graph()
+    #     print performer.extract_features(graph)
     return
 
 def design(thread_id):
-    architecture = 'small_world'
-    # benchmark = performer.BENCHMARKS[thread_id]
-    benchmark = 'fft'
-    while True:
+    architecture = 'mesh'
+    for benchmark in performer.BENCHMARKS:
         performer.reinitialize(thread_id, benchmark, 'latency', uniform(0, 10), uniform(0, 10))
         if architecture == 'mesh':
             graph = performer.generate_grid_graph()
@@ -499,23 +502,24 @@ def design(thread_id):
             raw_topology = loadtxt('topology_test.tsv', int)[-64:, -64:]
             graph = from_numpy_matrix(raw_topology + 1)
             performer.process_graph(graph)
-        performer.update_database(architecture, graph)
+        # performer.update_database(architecture, graph)
         # performer.update_estimators(4)
         optimization = Optimization(initial_state = graph)
         final = hill_climbing(optimization)
         graph = final.state
         if graph != None:
-            performer.update_database('xnet', graph)
+            performer.update_database('optimum', graph)
     return
 
 if __name__ == '__main__':
     # performer.initialize_files()
+    # check_call(['make'])
     performer.initialize(8, 112)
     thread_count = 24
     pool = Pool(thread_count)
     pool.map(design, range(thread_count))
     # for thread_id in range(thread_count):
     #     design(thread_id)
-    # test()
-    # analyze()
+    # pool.map(test, range(thread_count))
+    analyze()
     # check_call(['pdflatex', 'architect'])
