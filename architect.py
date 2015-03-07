@@ -89,6 +89,7 @@ from numpy.random import randn
 from scipy.spatial.distance import cityblock
 from scipy.spatial.distance import euclidean
 from scipy.stats import rv_discrete
+import pandas
 from pandas import read_csv
 from pandas import DataFrame
 from pandas import Series
@@ -119,7 +120,7 @@ class Critic(object):
 class Performer(object):
     SIMULATOR = 'simulator.out'
     ACCURACY = 'accuracy.tsv'
-    DATASET = 'dataset_grid.tsv'
+    DATASET = 'dataset.tsv'
     NODE_WEIGHT = 3
     DIMENSION = 2
     DEGREE_MAX = 7
@@ -174,7 +175,9 @@ class Performer(object):
         nodes = (index / self.NODE_COUNT, index % self.NODE_COUNT)
         return nodes
     def file_name(self, quantity, index):
-        if quantity in ['network_figure', 'link_lengths'] + self.ATTRIBUTES + self.NORMALIZED_ATTRIBUTES:
+        quantities = ['topology_view', 'link_lengths', 'average_hop_count']
+        quantities += self.ATTRIBUTES + self.NORMALIZED_ATTRIBUTES
+        if quantity in quantities:
             name = quantity + '_' + str(index)
         else:
             raise NameError('no file for quantity: ' + quantity)
@@ -384,14 +387,21 @@ class Performer(object):
         # draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
         savefig(figure_file)
         return
-    def plot_bar(self, dataframe, index, columns, values):
-        data = dataframe[[index, columns, values]]
-        print 'performer.plot_line: ', index, columns, values
-        data = data.pivot(index, columns, values)
+    def plot_bar(self, dataframe, index, columns, attribute):
+        data = dataframe[[index, columns, attribute]]
+        print 'performer.plot_line: ', index, columns, attribute
+        data = data.pivot(index, columns, attribute)
         # print data
         axis = data.plot(kind = 'bar', edgecolor = 'none')
-        axis.set_ylabel(values)
-        axis.get_figure().savefig(self.file_name(values, index))
+        axis.set_ylabel(attribute)
+        ymin = None
+        if attribute == 'latency':
+            ymin = 70
+        if attribute == 'energy':
+            ymin = 2e-10
+        axis.set_ylim(ymin)
+        axis.legend(loc='lower right')
+        axis.get_figure().savefig(self.file_name(attribute, index))
         return
     def plot_histogram(self, dataframe, column, value, benchmark):
         figure()
@@ -415,7 +425,7 @@ class Performer(object):
         for benchmark in self.BENCHMARKS:
             evolution = data[data['benchmark'] == benchmark][attributes].cummin().reindex()
             evolution['trial'] = evolution.index
-            result=result.append(evolution, ignore_index = True)
+            result = concat([result, evolution], ignore_index = True)
         for metric in self.TARGETS:
             self.plot_line(result, 'trial', 'benchmark', metric)
         return
@@ -450,17 +460,17 @@ def analyze():
     data = read_csv(performer.DATASET, sep = '\t', skipinitialspace = True)
     # attributes = performer.METADATA + performer.ATTRIBUTES
     print 'analyze:', data.columns.values
-    # data['graph'] = [performer.string_to_graph(t) for t in data['topology']]
-    # data['average_hop_count'] = [average_shortest_path_length(g) for g in data['graph']]
-    # data['link_lengths'] = [get_edge_attributes(g, 'length').values() for g in data['graph']]
-    # data['network_figure'] = [performer.file_name('network_figure', b) for b in data['benchmark']]
-    # data['architecture/benchmark'] = data['architecture'] + '/' + data['benchmark']
-    attributes = ['edge_count', 'latency', 'average_path_length','weighted_average_path_length']
+    attributes = ['latency', 'energy', 'average_path_length', 'average_hop_count']
     results = data
-    # results = data.ix[data.groupby(['benchmark', 'architecture'])['latency'].idxmin()]
+    results = data.ix[data.groupby(['benchmark', 'architecture'])['latency'].idxmin()]
     results.sort('latency', inplace = True)
-    print results.head()
-    print results[attributes]
+    results['graph'] = [performer.string_to_graph(t) for t in results['topology']]
+    results['average_hop_count'] = [average_shortest_path_length(g) for g in results['graph']]
+    results['link_lengths'] = [get_edge_attributes(g, 'length').values() for g in results['graph']]
+    results['topology_view'] = [performer.file_name('topology_view', b) for b in results['benchmark']]
+    results['architecture/benchmark'] = results['architecture'] + '/' + results['benchmark']
+    # print results.head()
+    # print results[attributes]
     # for normalized_attribute, attribute in zip(performer.NORMALIZED_ATTRIBUTES, performer.ATTRIBUTES):
     #     normlized_values = []
     #     for index, row in results.iterrows():
@@ -468,19 +478,21 @@ def analyze():
     #         normlized_values.append(row[attribute]/squeeze(results[mesh_index][attribute]))
     #     results[normalized_attribute] = normlized_values
     # for attribute in performer.NORMALIZED_ATTRIBUTES:
-    #     performer.plot_bar(results, 'benchmark', 'architecture', attribute)
-    # for benchmark in performer.BENCHMARKS:
-    #     mask = results['benchmark'] == benchmark
-    #     performer.plot_histogram(results[mask], 'architecture/benchmark', 'link_lengths', benchmark)
-    # optimum_data = results[results['architecture'] == 'optimum']
-    # map(performer.draw_graph, optimum_data['benchmark'],
-    #     optimum_data['topology'], optimum_data['network_figure'])
+    for attribute in attributes:
+        performer.plot_bar(results, 'benchmark', 'architecture', attribute)
+    for benchmark in performer.BENCHMARKS:
+        mask = results['benchmark'] == benchmark
+        performer.plot_histogram(results[mask], 'architecture/benchmark', 'link_lengths', benchmark)
+    optimum_data = results[results['architecture'] == 'optimum']
+    map(performer.draw_graph, optimum_data['benchmark'], optimum_data['graph'], optimum_data['topology_view'])
     return
 
-def test(thread_count):
-    for i in range(10):
-        victim = random.choice(range(1000000))
-        print victim
+def test():
+    data = read_csv(performer.DATASET, sep = '\t')
+    for data_file in ['dataset_optimum.tsv', 'dataset_mesh.tsv']:
+        data1 = read_csv(data_file, sep = '\t')
+        data = concat([data, data1], ignore_index=True)
+    data.to_csv(performer.DATASET, sep = '\t', index=False)
     # print performer.FEATURES
     # for i in range(9):
     #     performer.reinitialize(0, 'fft', 'latency', uniform(0, 10), uniform(0, 10))
@@ -488,10 +500,10 @@ def test(thread_count):
     #     print performer.extract_features(graph)
     return
 
-def design(thread_id):
-    architecture = 'mesh'
+def design((thread_id, architecture)):
     for benchmark in performer.BENCHMARKS:
         performer.reinitialize(thread_id, benchmark, 'latency', uniform(0, 10), uniform(0, 10))
+        # performer.update_estimators(4)
         if architecture == 'mesh':
             graph = performer.generate_grid_graph()
         elif architecture == 'random':
@@ -502,13 +514,12 @@ def design(thread_id):
             raw_topology = loadtxt('topology_test.tsv', int)[-64:, -64:]
             graph = from_numpy_matrix(raw_topology + 1)
             performer.process_graph(graph)
-        # performer.update_database(architecture, graph)
-        # performer.update_estimators(4)
-        optimization = Optimization(initial_state = graph)
-        final = hill_climbing(optimization)
-        graph = final.state
+        elif architecture == 'optimum':
+            optimization = Optimization(initial_state = performer.generate_small_world_graph())
+            final = hill_climbing(optimization)
+            graph = final.state
         if graph != None:
-            performer.update_database('optimum', graph)
+            performer.update_database(architecture, graph)
     return
 
 if __name__ == '__main__':
@@ -517,9 +528,10 @@ if __name__ == '__main__':
     performer.initialize(8, 112)
     thread_count = 24
     pool = Pool(thread_count)
-    # pool.map(design, range(thread_count))
+    pool.map(design, zip(range(thread_count), ['small_world'] * thread_count))
     # for thread_id in range(thread_count):
-    #     design(thread_id)
+    #     design(zip(thread_id, 'mesh'))
+    # test()
     # pool.map(test, range(thread_count))
-    analyze()
+    # analyze()
     # check_call(['pdflatex', 'architect'])
