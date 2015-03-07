@@ -127,16 +127,16 @@ bool fSTART=true; //Start from beginning
 bool fFFT = false;
 bool fRADIX = false;
 bool fLU = false;
+bool fWATER = false;
 bool fCANNEAL = false;
+bool fFLUIDANIMATE = false;
+bool fDEDUP = false;
+bool fVIPS = false;
 bool fBODYTRACK = false;
 #define fDEDUP_wonje false
 #define fFLUID_wonje  false
-#define fWATER_eonje false 
 #define fVIPS_wonje false 
 
-#define fVIPS false
-#define fDEDUP false
-#define fFLUIDANIMATE false
 #define fSWAPTION false
 #define fFREQMINE false
 #define fRADIX10 false
@@ -443,7 +443,7 @@ int octoDim = 1;	// for multidimesnional octagon only
 int cycles = 0;		// simulation time in cycles 
 int maxLatency = 4000;	// for histogram calculation
 int maxMessage = 1200;
-int DUR =  20000;		// duration of simulation in cycles
+int DUR =  1000000;		// duration of simulation in cycles
 int reset = 10000;		// time when stats are reset for transient effects
 int numBuses = 0;	// Number of buses (cluster)
 int numNodes = 24;	// number of nodes
@@ -612,7 +612,7 @@ void process_trace_injections();
 void inject_from_trace(int src);
 void process_consumptions();
 void set_intranode_moves(int a, int b, int c, int d);
-void initialize_network();
+void initialize_network(char * topology0);
 void reinitialize_network();
 void detect_collisions();
 void detect_blocking();
@@ -712,7 +712,7 @@ void initialize_benchmarks();
 
 // FUNCTIONS ***************************************
 
-void initialize_network(){
+void initialize_network(char * topology0){
 	int helpmeout = 0;
 	token1 = channel_1_node[0];
 	token2 = channel_2_node[0];
@@ -997,7 +997,7 @@ void initialize_network(){
 
 			//START OF USING PREVIOUS CONNECTION ESTABLISHED EARLIER
 			//connection needs to be built before this spot, other functions/code require it to be finished here
-			ifstream sw_connection_s("topology.tsv"); // yuchen: topology specification
+			ifstream sw_connection_s(topology0); // yuchen: topology specification
 			int temp_connection = 0;
 			int noOFconnection=0;
 			if(!sw_connection_s.good())
@@ -1020,7 +1020,19 @@ void initialize_network(){
 			}
 			//END OF USING PREVIOUS CONNECTION FILE
 			cout << "total link no:  "<< noOFconnection <<endl;
+			int port_countTemp=0;
+			for(int rcount = 64; rcount < numNodes; rcount++)
+			  {
+			    port_countTemp=0;
+			    for(int ccount = 64; ccount < numNodes; ccount++)
+			      {
+				if ( connection[rcount][ccount]>0)
+				  port_countTemp++;
+			      }
 
+			    if (port_countTemp==0)
+			      cout<<"___________________Here is problem : port no:______ "<< rcount<<endl;
+			  }
 			if(fALASH || fLASH || fMPLASH)
 			{
 				for(int i=0; i<numNodes; i++)
@@ -1195,6 +1207,7 @@ void initialize_network(){
 							if (superpath[minlength] != ccount)
 							{
 								helpmeout = 1;
+								cout << rcount << "," << ccount << endl;
 								if ((ccount < numIps) && (rcount < numIps))
 								{
 									cout << "\n\\\\\\\\\\\\\\\\\\\\ERROR HAS HAPPENED FOR SOURCE\\DEST PAIR (" << rcount << "\\" << ccount << ")!" << endl;
@@ -6222,8 +6235,8 @@ void process_injections() {
 				if (ips[a].queue_pop!=queueSize-1)
 				{
 					ips[a].queue[ips[a].queue_pop]=cycles;
-					
-					double temp = ((double)rand() / (RAND_MAX+1)); // long latency bug: integer overflow
+					double temp;
+					// temp = ((double)rand() / (RAND_MAX+1)); // latency bug: integer overflow
 					// cout << "old random number: " << temp << endl;
 					temp = ((double)rand()) / ((double)RAND_MAX+1); // yuchen: bug fixed
 					// cout << "new random number:" << temp << endl;
@@ -8667,7 +8680,7 @@ void setDefaults(){
 	bufferDepth=2;
 	numVirts=4;
 	queueSize=100;
-	DUR=100000;
+	DUR=100000;		// yuchen: the higher, the more accurate
 	reset=2000;
 	step=1000;
 	traffic=0;
@@ -9738,7 +9751,7 @@ void get_next_trace(){
 // RUN FUNCTION ***********************************
 int main (int argc, char *argv[]) 
 {
-  assert(argc == 2);
+  assert(argc == 3);
   string benchmark0 = argv[1];
   if (benchmark0 == "fft")
     fFFT = true;
@@ -9746,11 +9759,18 @@ int main (int argc, char *argv[])
     fRADIX = true;
   else if (benchmark0 == "lu")
     fLU = true;
+  else if (benchmark0 == "water")
+    fWATER = true;
   else if (benchmark0 == "canneal")
     fCANNEAL = true;
+  else if (benchmark0 == "dedup")
+    fDEDUP = true;
+  else if (benchmark0 == "fluidanimate")
+    fFLUIDANIMATE = true;
+  else if (benchmark0 == "vips")
+    fVIPS = true;
   else
     assert(false);
-
   flit_hop_count = 0;
   total_flit_count = 0;
 
@@ -9920,7 +9940,7 @@ int main (int argc, char *argv[])
 	if(fBENCHMARK)
 		initialize_benchmarks();
 
-	initialize_network();
+	initialize_network(argv[2]);
 	initWirelessTokens();
 	makeFij();
 	if(fCANNEAL || fFLUIDANIMATE)
@@ -9964,12 +9984,12 @@ int main (int argc, char *argv[])
 				if ((float)vary[z-1]==(float)0.01) {	// return to start of file
 					if (traceFile.is_open()) traceFile.close();
 					traceFile.open("trace0.01.txt",fstream::in);
-					DUR=100000;
+					DUR=1000000;
 				}
 				if ((float)vary[z-1]==(float)0.1) {	// return to start of file
 					if (traceFile.is_open()) traceFile.close();
 					traceFile.open("trace0.1.txt",fstream::in);
-					DUR=200000;
+					DUR=1000000;
 				}
 				if ((float)vary[z-1]==(float)0.2) {
 					if (traceFile.is_open()) traceFile.close();
@@ -15793,35 +15813,31 @@ void initialize_benchmarks()
 	}
 	if(!benchmark_file.is_open()) // yuchen: traffic file specification
 	{
-	  if(fFFT) {
+	  if(fFFT)
 	    benchmark_file.open("traffic_fft.tsv", fstream::in);
-	  }
-		else if(fRADIX)
-			benchmark_file.open("traffic_radix.tsv", fstream::in);
-		else if(fLU)
-			benchmark_file.open("traffic_lu.tsv", fstream::in);
-		else if(fCANNEAL)
-			benchmark_file.open("traffic_canneal.tsv", fstream::in);
+	  else if(fLU)
+	    benchmark_file.open("traffic_lu.tsv", fstream::in);
+	  else if(fRADIX)
+	    benchmark_file.open("traffic_radix.tsv", fstream::in);
+	  else if(fWATER)
+	    benchmark_file.open("traffic_water.tsv", fstream::in);
+	  else if(fCANNEAL)
+	    benchmark_file.open("traffic_canneal.tsv", fstream::in);
+	  else if(fDEDUP)
+	    benchmark_file.open("traffic_dedup.tsv", fstream::in);
+	  else if(fFLUIDANIMATE)
+	    benchmark_file.open("traffic_fluidanimate.tsv", fstream::in);
+	  else if(fVIPS)
+	    benchmark_file.open("traffic_vips.tsv", fstream::in);
+
 		else if(fBODYTRACK)
 			benchmark_file.open("traffic_bodytrack.txt", fstream::in);
-		else if(fDEDUP_wonje)
-			benchmark_file.open("traffic_DEDUP_wonje.txt", fstream::in);
 		else if(fFLUID_wonje)
 			benchmark_file.open("traffic_fluid_wonje.txt", fstream::in);
-		else if(fWATER_eonje)
-			benchmark_file.open("traffic_WATER_Wonje.txt", fstream::in);
 		else if(fVIPS_wonje)
 			benchmark_file.open("traffic_VIPS_wonje.txt", fstream::in);
-
-
-
-		
-		else if(fVIPS)
-			benchmark_file.open("traffic_vips.txt", fstream::in);
 		else if(fDEDUP)
 			benchmark_file.open("traffic_dedup.txt", fstream::in);
-		else if(fFLUIDANIMATE)
-			benchmark_file.open("traffic_fluidanimate.txt", fstream::in);
 		else if(fSWAPTION)
 			benchmark_file.open("traffic_swaption.txt", fstream::in);
 		else if(fFREQMINE)
