@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# simulator bugs: power components missing
+# simulator: power components missing
 from collections import OrderedDict
 from multiprocessing import Pool
 from shutil import copyfile
@@ -118,7 +118,8 @@ class Critic(object):
         return
 class Performer(object):
     SIMULATOR = 'simulator.out'
-    DATASET = 'dataset.tsv'
+    ACCURACY = 'accuracy.tsv'
+    DATASET = 'dataset_grid.tsv'
     NODE_WEIGHT = 3
     DIMENSION = 2
     DEGREE_MAX = 7
@@ -229,8 +230,8 @@ class Performer(object):
             estimators.append(GridSearchCV(svrs[i], parameters, n_jobs = -1))
             estimators[i].fit(data[len(self.TARGETS)], data[i])
             data_instance += [estimators[i].best_params_, estimators[i].best_score_]
-        print  'performer: update_estimator: benchmark =', self.BENCHMARK+';', data_instance
-        with open(self.file_name('accuracy', self.BENCHMARK), 'a') as f:
+        print  'performer.update_estimators: benchmark =', self.BENCHMARK+';', data_instance
+        with open(self.ACCURACY, 'a') as f:
             f.write('\t'.join(map(str, data_instance)) + '\n')
         self.estimators = estimators
         return
@@ -447,7 +448,6 @@ class Optimization(SearchProblem):
         return (-performer.weighted_average_path_length(performer.TRAFFIC, state))
 def analyze():
     data = read_csv(performer.DATASET, sep = '\t', skipinitialspace = True)
-    # data = read_csv('dataset_grid.tsv', sep = '\t', skipinitialspace = True)
     # attributes = performer.METADATA + performer.ATTRIBUTES
     print 'analyze:', data.columns.values
     # data['graph'] = [performer.string_to_graph(t) for t in data['topology']]
@@ -517,7 +517,7 @@ if __name__ == '__main__':
     performer.initialize(8, 112)
     thread_count = 24
     pool = Pool(thread_count)
-    pool.map(design, range(thread_count))
+    # pool.map(design, range(thread_count))
     # for thread_id in range(thread_count):
     #     design(thread_id)
     # pool.map(test, range(thread_count))
