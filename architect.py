@@ -120,7 +120,6 @@ class Critic(object):
 class Performer(object):
     SIMULATOR = 'simulator.out'
     ACCURACY = 'accuracy.tsv'
-    DATASET = 'dataset.tsv'
     NODE_WEIGHT = 3
     DIMENSION = 2
     DEGREE_MAX = 7
@@ -182,7 +181,9 @@ class Performer(object):
         else:
             raise NameError('no file for quantity: ' + quantity)
         return name
-    def initialize(self, radix, edge_count):
+    def initialize(self, architecture, radix, edge_count):
+        self.ARCHITECTURE = architecture
+        self.DATASET = 'dataset_' + architecture + '.tsv'
         self.RADIX = radix
         self.NODE_COUNT = self.RADIX ** self.DIMENSION
         self.EDGE_COUNT = edge_count
@@ -262,13 +263,13 @@ class Performer(object):
         new_key = tuple_key[0] * self.RADIX + tuple_key[1]
         return new_key
     def generate_grid_graph(self):
-        print 'performer.generate_grid_graph:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT
+        print 'performer.generate_grid_graph:', self.NODE_COUNT, self.EDGE_COUNT
         tuple_keyed_graph = grid_2d_graph(self.RADIX, self.RADIX)
         graph = relabel_nodes(tuple_keyed_graph, self.key_mapping)
         self.process_graph(graph)
         return graph
     def generate_random_graph(self):
-        print 'performer.generate_random_graph:', self.BENCHMARK, self.NODE_COUNT, self.EDGE_COUNT
+        print 'performer.generate_random_graph:', self.NODE_COUNT, self.EDGE_COUNT
         while True:
             graph = gnm_random_graph(self.NODE_COUNT, self.EDGE_COUNT)
             if self.constraints_satisfied(graph):
@@ -380,9 +381,9 @@ class Performer(object):
         with open(self.DATASET, 'w+') as f:
             f.write('\t'.join(map(str, columns)) + '\n')
         return
-    def draw_graph(self, benchmark, graph, figure_file):
+    def draw_graph(self, title_name, graph, figure_file):
         figure()
-        title(benchmark)
+        title('optimum/' + title_name)
         draw(graph, get_node_attributes(graph, 'position'), hold = True)
         # draw_networkx_edge_labels(graph, get_node_attributes(graph, 'position'), alpha = 0.2)
         savefig(figure_file)
@@ -392,14 +393,13 @@ class Performer(object):
         print 'performer.plot_line: ', index, columns, attribute
         data = data.pivot(index, columns, attribute)
         # print data
-        axis = data.plot(kind = 'bar', edgecolor = 'none')
-        axis.set_ylabel(attribute)
         ymin = None
         if attribute == 'latency':
             ymin = 70
         if attribute == 'energy':
             ymin = 2e-10
-        axis.set_ylim(ymin)
+        axis = data.plot(kind = 'bar', edgecolor = 'none', rot = 0, ylim = ymin)
+        axis.set_ylabel(attribute)
         axis.legend(loc='lower right')
         axis.get_figure().savefig(self.file_name(attribute, index))
         return
@@ -457,11 +457,14 @@ class Optimization(SearchProblem):
         # return estimated_quality
         return (-performer.weighted_average_path_length(performer.TRAFFIC, state))
 def analyze():
-    data = read_csv(performer.DATASET, sep = '\t', skipinitialspace = True)
+    data = DataFrame()
+    for architecture in ['mesh', 'small_world', 'optimum']:
+        data_file = 'dataset_' + architecture + '.tsv'
+        data1 = read_csv(data_file, sep = '\t')
+        data = concat([data, data1], ignore_index=True)
     # attributes = performer.METADATA + performer.ATTRIBUTES
     print 'analyze:', data.columns.values
-    attributes = ['latency', 'energy', 'average_path_length', 'average_hop_count']
-    results = data
+    attributes = ['latency', 'energy', 'edge_count', 'average_path_length', 'average_hop_count']
     results = data.ix[data.groupby(['benchmark', 'architecture'])['latency'].idxmin()]
     results.sort('latency', inplace = True)
     results['graph'] = [performer.string_to_graph(t) for t in results['topology']]
@@ -488,11 +491,6 @@ def analyze():
     return
 
 def test():
-    data = read_csv(performer.DATASET, sep = '\t')
-    for data_file in ['dataset_optimum.tsv', 'dataset_mesh.tsv']:
-        data1 = read_csv(data_file, sep = '\t')
-        data = concat([data, data1], ignore_index=True)
-    data.to_csv(performer.DATASET, sep = '\t', index=False)
     # print performer.FEATURES
     # for i in range(9):
     #     performer.reinitialize(0, 'fft', 'latency', uniform(0, 10), uniform(0, 10))
@@ -500,9 +498,11 @@ def test():
     #     print performer.extract_features(graph)
     return
 
-def design((thread_id, architecture)):
+def design(thread_id):
+    architecture = performer.ARCHITECTURE
     for benchmark in performer.BENCHMARKS:
-        performer.reinitialize(thread_id, benchmark, 'latency', uniform(0, 10), uniform(0, 10))
+        # performer.reinitialize(thread_id, benchmark, 'latency', uniform(1, 10), uniform(0, 1))
+        performer.reinitialize(thread_id, benchmark, 'latency', 2.8, .01)
         # performer.update_estimators(4)
         if architecture == 'mesh':
             graph = performer.generate_grid_graph()
@@ -523,15 +523,15 @@ def design((thread_id, architecture)):
     return
 
 if __name__ == '__main__':
-    # performer.initialize_files()
     # check_call(['make'])
-    performer.initialize(8, 112)
+    performer.initialize('small_world', 8, 112)
+    performer.initialize_files()
     thread_count = 24
-    pool = Pool(thread_count)
-    pool.map(design, zip(range(thread_count), ['small_world'] * thread_count))
-    # for thread_id in range(thread_count):
-    #     design(zip(thread_id, 'mesh'))
     # test()
+    pool = Pool(thread_count)
+    pool.map(design, range(thread_count))
+    # for thread_id in range(thread_count):
+    #     design(thread_id)
     # pool.map(test, range(thread_count))
     # analyze()
     # check_call(['pdflatex', 'architect'])
