@@ -123,6 +123,7 @@ class Performer(object):
     NODE_WEIGHT = 3
     DIMENSION = 2
     DEGREE_MAX = 7
+    ARCHITECTURES = ['mesh', 'random', 'small_world', 'optimum']
     BENCHMARKS = ['fft', 'lu', 'radix', 'water', 'canneal', 'dedup', 'fluidanimate', 'vips']
     TARGETS = ['latency', 'energy']
     TARGET_TOKENS = ['Avg. Network Latency:', 'Average energy per message done:']
@@ -284,7 +285,7 @@ class Performer(object):
         edges = performer.edge_indices.flatten()
         probabilities = performer.probabilities.flatten()
         for trial in range(len(edges)-9):
-            edge_index = numpy.random.choice(edges, p = probabilities)
+            edge_index = numpy.random.choice(edges, p=probabilities)
             source, destination = self.edge_nodes(edge_index)
             graph.add_edge(source, destination, length = self.link_length(source, destination),
                            weight = self.edge_weight(source, destination))
@@ -390,32 +391,27 @@ class Performer(object):
         return
     def plot_bar(self, dataframe, index, columns, attribute):
         data = dataframe[[index, columns, attribute]]
-        print 'performer.plot_line: ', index, columns, attribute
+        print 'performer.plot_bar: ', index, columns, attribute
         data = data.pivot(index, columns, attribute)
-        # print data
         ymin = None
         if attribute == 'latency':
             ymin = 70
         if attribute == 'energy':
-            ymin = 2e-10
-        axis = data.plot(kind = 'bar', edgecolor = 'none', rot = 0, ylim = ymin)
+            ymin = 3e-10
+        axis = data.plot(kind ='bar', edgecolor='none', rot=0, ylim=ymin)
         axis.set_ylabel(attribute)
-        axis.legend(loc='lower right')
-        axis.get_figure().savefig(self.file_name(attribute, index))
+        axis.legend(loc='upper left', bbox_to_anchor=(1,1))
+        axis.get_figure().savefig(self.file_name(attribute, index), bbox_inches='tight')
         return
     def plot_histogram(self, dataframe, column, value, benchmark):
         figure()
         distributions = DataFrame()
         for index1, row in dataframe.iterrows():
             bin_count = max(row[value]) + 3
-            if value == 'link_lengths':
-                count = 112
-            else:
-                count = -1
-            new_column = DataFrame({row[column]: Series(histogram(row[value][:count], bins = range(bin_count))[0])})
+            new_column = DataFrame({row[column]: Series(histogram(row[value], bins = range(bin_count))[0])})
             distributions = concat([distributions, new_column], axis = 1)
         print 'performer.plot_histogram: ', column, value
-        axis = distributions.plot(kind = 'bar', edgecolor = 'none')
+        axis = distributions.plot(kind = 'bar', edgecolor = 'none', rot=0)
         axis.set_xlabel(value)
         axis.get_figure().savefig(self.file_name(value, benchmark))
         return
@@ -428,6 +424,15 @@ class Performer(object):
             result = concat([result, evolution], ignore_index = True)
         for metric in self.TARGETS:
             self.plot_line(result, 'trial', 'benchmark', metric)
+        return
+    def plot_figures(self, results):
+        for attribute in ['latency', 'energy', 'average_path_length', 'average_hop_count']:
+            performer.plot_bar(results, 'benchmark', 'architecture', attribute)
+        for benchmark in performer.BENCHMARKS:
+            mask = results['benchmark'] == benchmark
+            performer.plot_histogram(results[mask], 'architecture/benchmark', 'link_lengths', benchmark)
+        optimum_data = results[results['architecture'] == 'optimum']
+        map(performer.draw_graph, optimum_data['benchmark'], optimum_data['graph'], optimum_data['topology_view'])
         return
 performer = Performer()
 
@@ -458,36 +463,27 @@ class Optimization(SearchProblem):
         return (-performer.weighted_average_path_length(performer.TRAFFIC, state))
 def analyze():
     data = DataFrame()
-    for architecture in ['mesh', 'small_world', 'optimum']:
+    for architecture in performer.ARCHITECTURES:
         data_file = 'dataset_' + architecture + '.tsv'
         data1 = read_csv(data_file, sep = '\t')
         data = concat([data, data1], ignore_index=True)
-    # attributes = performer.METADATA + performer.ATTRIBUTES
     print 'analyze:', data.columns.values
-    attributes = ['latency', 'energy', 'edge_count', 'average_path_length', 'average_hop_count']
     results = data.ix[data.groupby(['benchmark', 'architecture'])['latency'].idxmin()]
-    results.sort('latency', inplace = True)
+    # results.sort('latency', inplace = True)
     results['graph'] = [performer.string_to_graph(t) for t in results['topology']]
     results['average_hop_count'] = [average_shortest_path_length(g) for g in results['graph']]
     results['link_lengths'] = [get_edge_attributes(g, 'length').values() for g in results['graph']]
     results['topology_view'] = [performer.file_name('topology_view', b) for b in results['benchmark']]
     results['architecture/benchmark'] = results['architecture'] + '/' + results['benchmark']
-    # print results.head()
-    # print results[attributes]
+    mask = (results['architecture'] == 'small_world') | (results['architecture'] == 'optimum')
+    print results[mask]['architecture', 'benchmark', 'latency']
     # for normalized_attribute, attribute in zip(performer.NORMALIZED_ATTRIBUTES, performer.ATTRIBUTES):
     #     normlized_values = []
     #     for index, row in results.iterrows():
     #         mesh_index = (results['architecture'] == 'mesh') & (results['benchmark'] == row['benchmark'])
     #         normlized_values.append(row[attribute]/squeeze(results[mesh_index][attribute]))
     #     results[normalized_attribute] = normlized_values
-    # for attribute in performer.NORMALIZED_ATTRIBUTES:
-    for attribute in attributes:
-        performer.plot_bar(results, 'benchmark', 'architecture', attribute)
-    for benchmark in performer.BENCHMARKS:
-        mask = results['benchmark'] == benchmark
-        performer.plot_histogram(results[mask], 'architecture/benchmark', 'link_lengths', benchmark)
-    optimum_data = results[results['architecture'] == 'optimum']
-    map(performer.draw_graph, optimum_data['benchmark'], optimum_data['graph'], optimum_data['topology_view'])
+    # performer.plot_figures(results)
     return
 
 def test():
@@ -500,38 +496,37 @@ def test():
 
 def design(thread_id):
     architecture = performer.ARCHITECTURE
-    for benchmark in performer.BENCHMARKS:
-        # performer.reinitialize(thread_id, benchmark, 'latency', uniform(1, 10), uniform(0, 1))
-        performer.reinitialize(thread_id, benchmark, 'latency', 2.8, .01)
-        # performer.update_estimators(4)
-        if architecture == 'mesh':
-            graph = performer.generate_grid_graph()
-        elif architecture == 'random':
-            graph = performer.generate_random_graph()
-        elif architecture == 'small_world':
-            graph = performer.generate_small_world_graph()
-        elif architecture == 'test':
-            raw_topology = loadtxt('topology_test.tsv', int)[-64:, -64:]
-            graph = from_numpy_matrix(raw_topology + 1)
-            performer.process_graph(graph)
-        elif architecture == 'optimum':
-            optimization = Optimization(initial_state = performer.generate_small_world_graph())
-            final = hill_climbing(optimization)
-            graph = final.state
-        if graph != None:
-            performer.update_database(architecture, graph)
+    while True:
+        for benchmark in performer.BENCHMARKS:
+            performer.reinitialize(thread_id, benchmark, 'latency', uniform(0, 8), 0)
+            # performer.update_estimators(4)
+            if architecture == 'mesh':
+                graph = performer.generate_grid_graph()
+            elif architecture == 'random':
+                graph = performer.generate_random_graph()
+            elif architecture == 'small_world':
+                graph = performer.generate_small_world_graph()
+            elif architecture == 'test':
+                raw_topology = loadtxt('topology_test.tsv', int)[-64:, -64:]
+                graph = from_numpy_matrix(raw_topology + 1)
+                performer.process_graph(graph)
+            elif architecture == 'optimum':
+                optimization = Optimization(initial_state = performer.generate_small_world_graph())
+                final = hill_climbing(optimization)
+                graph = final.state
+            else:
+                raise NameError('unknown architecture: ' + architecture)
+            if graph != None:
+                performer.update_database(architecture, graph)
     return
 
 if __name__ == '__main__':
-    # check_call(['make'])
-    performer.initialize('small_world', 8, 112)
+    performer.initialize('optimum', 8, 112)
     performer.initialize_files()
-    thread_count = 24
+    # design(8)
     # test()
+    thread_count = 24
     pool = Pool(thread_count)
     pool.map(design, range(thread_count))
-    # for thread_id in range(thread_count):
-    #     design(thread_id)
-    # pool.map(test, range(thread_count))
-    # analyze()
+    analyze()
     # check_call(['pdflatex', 'architect'])
