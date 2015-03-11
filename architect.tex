@@ -56,34 +56,19 @@
 %%   \label{fig:latency_energy_product_trial}
 %% \end{figure}
 
-
+The optimized networks are generated from local searches and are local optimums in the design space, which are marked as optimum in the figures.
 \begin{figure}[htb]
-  \centering
-  %% \begin{subfigure} {\includegraphics[width= \textwidth]{grid.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width= .4\textwidth]{grid.png}} \end{subfigure}
-  \begin{subfigure} {\includegraphics[width= .4\textwidth]{random.png}} \end{subfigure}
-  %% \begin{subfigure} {\includegraphics[width=.3\textwidth]{small_world.png}} \end{subfigure}
-  \rule{\linewidth}{1pt}
-  \caption{topologies}
+  %% \begin{subfigure} {\includegraphics[width=.4\textwidth]{latency_normalized_benchmark.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width= \textwidth]{latency_benchmark}} \end{subfigure}
+  \rule{\linewidth}{1pt} \caption{latency}
 \end{figure}
 
-%% \begin{figure}[htb]
-%%   \centering
-%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{latency_normalized_benchmark.png}} \end{subfigure}
-%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{latency_benchmark.png}} \end{subfigure}
-%%   \rule{\linewidth}{1pt}
-%%   \caption{latency}
-%%   \label{fig:latency_benchmark}
-%% \end{figure}
-
-%% \begin{figure}[htb]
-%%   \centering
-%%   \begin{subfigure} {\includegraphics[width=\textwidth]{energy_normalized_benchmark.png}} \end{subfigure}
-%%   \rule{\linewidth}{1pt}
-%%   \caption{energy}
-%%   \label{fig:energy_normalized_benchmark}
-%% \end{figure}
-
+Mesh networks have lower latencies than random networks. Optimized networks have the lowest latencies.
+\begin{figure}[htb]
+  %% \begin{subfigure} {\includegraphics[width=\textwidth]{energy_normalized_benchmark.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width= \textwidth]{energy_benchmark}} \end{subfigure}
+  \rule{\linewidth}{1pt} \caption{energy} \label{fig:energy_benchmark}
+\end{figure}
 %% \begin{figure}[htb]
 %%   \centering
 %%   \begin{subfigure} {\includegraphics[width=\textwidth]{latency_energy_product_normalized_benchmark.png}} \end{subfigure}
@@ -92,23 +77,44 @@
 %%   \label{fig:latency_energy_product_normalized_benchmark}
 %% \end{figure}
 
-%% \begin{figure}[htb]
-%%   \centering
-%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{path_length_average_normalized_benchmark.png}} \end{subfigure}
-%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{path_length_average_benchmark.png}} \end{subfigure}
-%%   \rule{\linewidth}{1pt}
-%%   \caption{average path length}
-%%   \label{fig:path_length_average_benchmark}
-%% \end{figure}
+\begin{figure}[htb]
+  %% \begin{subfigure} {\includegraphics[width=.4\textwidth]{path_length_average_normalized_benchmark.png}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width= \textwidth]{average_path_length_benchmark.png}} \end{subfigure}
+  \rule{\linewidth}{1pt} \caption{average path length} \label{fig:average_path_length_benchmark}
+\end{figure}
 
-%% \begin{figure}[htb]
-%%   \centering
-%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{hop_count_average_normalized_benchmark}} \end{subfigure}
-%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{hop_count_average_benchmark}} \end{subfigure}
-%%   \rule{\linewidth}{1pt}
-%%   \caption{average hop count}
-%%   \label{fig:hop_count_average_benchmark}
-%% \end{figure}
+The optimizations significantly reduced the average path lengths by more than 10 cycles, which corresponds to the reductions in latencies.
+\begin{figure}[htb]
+  %% \begin{subfigure} {\includegraphics[width=.4\textwidth]{hop_count_average_normalized_benchmark}} \end{subfigure}
+  \begin{subfigure} {\includegraphics[width= \textwidth]{average_hop_count_benchmark.png}} \end{subfigure}
+  \rule{\linewidth}{1pt} \caption{average hop count} \label{fig:average_hop_count_benchmark}
+\end{figure}
+
+The average hop counts for mesh is higher than the rest 3, which are very similar. The fact that random networks and small-world networks have similar average hop counts is consistent with the definition of small-world networks. But interestingly, the optimization does not, or can not reduce the average hop count. This similarity in average hop counts for random networks, small-world networks and optimized networks should be the results of the physical constraints on maximum degree. If this constraints can be relaxed in the future, optimization might come up with more 'scale-free' like networks with even shorter hop counts.
+
+In link lengths distributions, random networks have more evenly distributed mid-range links and less very short or very long links. Small-world networks use less long links and more short links. Optimized networks use many very short links and only a few long links. From network cost perspective, using more short links reduces cost.
+\clearpage
+\begin{figure}[htb]
+  \begin{subfigure} {\includegraphics[width= \textwidth]{link_lengths_distribution.png}} \end{subfigure}
+  \rule{\linewidth}{1pt} \caption{link length distribution}
+\end{figure}
+
+\begin{figure}[htb]
+  \begin{subfigure} {\includegraphics[width= \textwidth]{topology_view_mesh}} \end{subfigure}
+  \rule{\linewidth}{1pt} \caption{topologies}
+\end{figure}
+\begin{figure}[htb]
+  \begin{subfigure} {\includegraphics[width= \textwidth]{topology_view_random}} \end{subfigure}
+  \rule{\linewidth}{1pt} \caption{topologies}
+\end{figure}
+\begin{figure}[htb]
+  \begin{subfigure} {\includegraphics[width= \textwidth]{topology_view_small_world}} \end{subfigure}
+  \rule{\linewidth}{1pt} \caption{topologies}
+\end{figure}
+\begin{figure}[htb]
+  \begin{subfigure} {\includegraphics[width= \textwidth]{topology_view_optimum}} \end{subfigure}
+  \rule{\linewidth}{1pt} \caption{topologies}
+\end{figure}
 
 %% \begin{figure}[htb]
 %%   \centering
@@ -147,21 +153,6 @@
 %%   \rule{\linewidth}{1pt}
 %%   \caption{hop count distribution}
 %%   \label{fig:hop_counts}
-%% \end{figure}
-
-%% \begin{figure}[htb]
-%%   \centering
-%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{link_lengths_canneal.png}} \end{subfigure}
-%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{link_lengths_dedup.png}} \end{subfigure}
-%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{link_lengths_fft.png}} \end{subfigure}
-%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{link_lengths_fluidanimate.png}} \end{subfigure}
-%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{link_lengths_lu.png}} \end{subfigure}
-%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{link_lengths_radix.png}} \end{subfigure}
-%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{link_lengths_vips.png}} \end{subfigure}
-%%   \begin{subfigure} {\includegraphics[width=.4\textwidth]{link_lengths_water.png}} \end{subfigure}
-%%   \rule{\linewidth}{1pt}
-%%   \caption{link length distribution}
-%%   \label{fig:link_lengths}
 %% \end{figure}
 
 %% \begin{figure}[htb]
