@@ -133,6 +133,7 @@ bool fFLUIDANIMATE = false;
 bool fDEDUP = false;
 bool fVIPS = false;
 bool fBODYTRACK = false;
+bool fcombined = false;
 #define fDEDUP_wonje false
 #define fFLUID_wonje  false
 #define fVIPS_wonje false 
@@ -9769,6 +9770,8 @@ int main (int argc, char *argv[])
     fFLUIDANIMATE = true;
   else if (benchmark0 == "vips")
     fVIPS = true;
+  else if (benchmark0 == "combined")
+    fcombined = true;
   else
     assert(false);
   flit_hop_count = 0;
@@ -15829,6 +15832,8 @@ void initialize_benchmarks()
 	    benchmark_file.open("traffic_fluidanimate.tsv", fstream::in);
 	  else if(fVIPS)
 	    benchmark_file.open("traffic_vips.tsv", fstream::in);
+	  else if (fcombined)
+	    benchmark_file.open("traffic_combined.tsv", fstream::in);
 
 		else if(fBODYTRACK)
 			benchmark_file.open("traffic_bodytrack.txt", fstream::in);
@@ -15836,8 +15841,6 @@ void initialize_benchmarks()
 			benchmark_file.open("traffic_fluid_wonje.txt", fstream::in);
 		else if(fVIPS_wonje)
 			benchmark_file.open("traffic_VIPS_wonje.txt", fstream::in);
-		else if(fDEDUP)
-			benchmark_file.open("traffic_dedup.txt", fstream::in);
 		else if(fSWAPTION)
 			benchmark_file.open("traffic_swaption.txt", fstream::in);
 		else if(fFREQMINE)
