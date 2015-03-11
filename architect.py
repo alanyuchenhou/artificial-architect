@@ -185,6 +185,7 @@ class Performer(object):
     def initialize(self, objective, architecture, radix, edge_count):
         self.ARCHITECTURE = architecture
         self.OBJECTIVE = objective
+        self.DATASET_TRAINING =  'dataset_smal_world_design.tsv'
         self.DATASET_DESIGN = 'dataset_' + architecture + '_design.tsv'
         self.DATASET_TEST = 'dataset_' + architecture + '_test.tsv'
         self.RADIX = radix
@@ -202,7 +203,7 @@ class Performer(object):
             raise NameError('unknown optimization_target: ' + optimization_target)
         self.BENCHMARK = benchmark
         self.THREAD_ID = thread_id
-        self.TOPOLOGY = 'topology' + str(thread_id) +'.tsv'
+        self.TOPOLOGY = 'topology_' + str(thread_id) +'.tsv'
         self.SIMULATION_LOG = 'simulation_' + str(thread_id) + '.log'
         self.OPTIMIZATION_TARGET = optimization_target
         self.TRAFFIC_FILE = 'traffic_' + benchmark + '.tsv'
@@ -408,6 +409,10 @@ class Performer(object):
             ymin = 70
         if attribute == 'energy':
             ymin = 3e-10
+        if attribute == 'average_path_length':
+            ymin = 10
+        if attribute == 'average_hop_count':
+            ymin = 2
         axis = data.plot(kind ='bar', edgecolor='none', rot=0, ylim=ymin)
         axis.set_ylabel(attribute)
         axis.legend(loc='upper left', bbox_to_anchor=(1,1))
@@ -425,7 +430,7 @@ class Performer(object):
         axis.set_xlabel(value)
         axis.get_figure().savefig(self.file_name(value, 'distribution'))
         return
-    def view(self, data):
+    def plot_trace(self, data):
         result = DataFrame()
         attributes = ['benchmark'] + self.TARGETS
         for benchmark in self.BENCHMARKS:
@@ -439,7 +444,7 @@ class Performer(object):
         for attribute in ['latency', 'energy', 'average_path_length', 'average_hop_count']:
             performer.plot_bar(results, 'benchmark', 'architecture', attribute)
         mask = results['benchmark'] == 'canneal'
-        performer.plot_histogram(results[mask], 'architecture/benchmark', 'link_lengths')
+        performer.plot_histogram(results[mask], 'architecture', 'link_lengths')
         for architecture in performer.ARCHITECTURES:
             optimum_data = results[results['architecture'] == architecture].iloc[0]
             performer.draw_graph(optimum_data['architecture'], optimum_data['graph'], architecture)
@@ -477,26 +482,25 @@ def analyze():
     data = DataFrame()
     for architecture in performer.ARCHITECTURES:
         performer.initialize('test', architecture, 8, 112)
+        print performer.DATASET_TEST
         data1 = read_csv(performer.DATASET_TEST, sep='\t')
         data = concat([data, data1], ignore_index=True)
-    # data = read_csv('dataset_optimum_test.tsv', sep='\t')
+    data.sort('benchmark', inplace = True)
     print 'analyze:', data.columns.values
-    data.sort('average_path_length', inplace = True)
-    results = data.ix[data.groupby(['benchmark', 'architecture'])['latency'].idxmin()]
+    # results = data.ix[data.groupby(['architecture', 'benchmark'])['latency'].idxmin()]
+    results = data
     results['graph'] = [performer.string_to_graph(t) for t in results['topology']]
     results['average_hop_count'] = [average_shortest_path_length(g) for g in results['graph']]
     results['link_lengths'] = [get_edge_attributes(g, 'length').values() for g in results['graph']]
-    results['architecture/benchmark'] = results['architecture'] + '/' + results['benchmark']
-    # results['topology_view'] = [performer.file_name('topology_view', b) for b in results['benchmark']]
-    # mask = (results['architecture'] == 'small_world') | (results['architecture'] == 'optimum')
-    print data[['architecture', 'benchmark', 'latency', 'average_path_length']]
+    mask = (results['architecture'] == 'small_world') | (results['architecture'] == 'optimum')
+    print data[mask][['architecture', 'benchmark', 'latency']]
+    performer.plot_figures(results)
     # for normalized_attribute, attribute in zip(performer.NORMALIZED_ATTRIBUTES, performer.ATTRIBUTES):
     #     normlized_values = []
     #     for index, row in results.iterrows():
     #         mesh_index = (results['architecture'] == 'mesh') & (results['benchmark'] == row['benchmark'])
     #         normlized_values.append(row[attribute]/squeeze(results[mesh_index][attribute]))
     #     results[normalized_attribute] = normlized_values
-    # performer.plot_figures(results)
     return
 
 def design(thread_id):
@@ -528,25 +532,31 @@ def test(benchmark):
     data = read_csv(performer.DATASET_DESIGN, sep='\t')
     results = data.ix[data['latency'].idxmin()]
     data.sort('average_path_length', inplace = True)
-    print data[['architecture', 'benchmark', 'latency', 'average_path_length', 'weighted_average_path_length']]
     graph = performer.string_to_graph(results['topology'])
-    print average_shortest_path_length(graph, 'weight')
     performer.reinitialize(benchmark, benchmark, 'latency', uniform(0, 4), 0)
     performer.update_database(performer.DATASET_TEST, performer.ARCHITECTURE, graph)
     return
 
+def view():
+    data = read_csv('dataset_small_world_design.tsv', sep = '\t')
+    print data.columns.values
+    data.sort('latency', inplace = True)
+    print data[['architecture', 'benchmark', 'latency', 'average_path_length', 'alpha', 'beta']]
+
 if __name__ == '__main__':
-    objective = 'design'
-    performer.initialize(objective, 'optimum', 8, 112)
-    performer.initialize_files(performer.DATASET_DESIGN)
+    objective = 'view'
+    performer.initialize(objective, 'random', 8, 112)
+    # performer.initialize_files(performer.DATASET_TEST)
     thread_count = 24
     pool = Pool(thread_count)
     if objective == 'design':
         # design(8)
         pool.map(design, range(thread_count))
     if objective == 'test':
-        test('fft')
-        # pool.map(test, performer.BENCHMARKS)
+        # test('fft')
+        pool.map(test, performer.BENCHMARKS)
     if objective == 'analyze':
         analyze()
         check_call(['pdflatex', 'architect'])
+    if objective == 'view':
+        view()
