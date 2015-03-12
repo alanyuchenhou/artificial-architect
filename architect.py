@@ -185,7 +185,7 @@ class Performer(object):
     def initialize(self, objective, architecture, radix, edge_count):
         self.ARCHITECTURE = architecture
         self.OBJECTIVE = objective
-        self.DATASET_TRAINING =  'dataset_smal_world_design.tsv'
+        self.DATASET_TRAINING =  'dataset_optimum_design.tsv'
         self.DATASET_DESIGN = 'dataset_' + architecture + '_design.tsv'
         self.DATASET_TEST = 'dataset_' + architecture + '_test.tsv'
         self.RADIX = radix
@@ -233,7 +233,7 @@ class Performer(object):
         savetxt('traffic_combined.tsv', combined_traffic, fmt='%f', delimiter='\t')
         return
     def update_estimators(self, accuracy):
-        data = self.load_data(self.DATASET_TRAINNING, range(len(self.ATTRIBUTES)))
+        data = self.load_data(self.DATASET_TRAINING, range(len(self.ATTRIBUTES)))
         c_range = accuracy
         gamma_range = accuracy
         parameters = {'C' : logspace(0, c_range, c_range+1).tolist(),
@@ -471,12 +471,12 @@ class Optimization(SearchProblem):
     def result(self, state, action):
         return action
     def value(self, state):
-        # raw_features = performer.extract_features(state)
-        # estimated_metrics = performer.estimate_metrics(raw_features)
-        # estimated_quality = performer.evaluate_quality(estimated_metrics)
-        # return estimated_quality
+        raw_features = performer.extract_features(state)
+        estimated_metrics = performer.estimate_metrics(raw_features)
+        estimated_quality = performer.evaluate_quality(estimated_metrics)
+        return estimated_quality
         # return (-performer.weighted_average_path_length(performer.TRAFFIC, state))
-        return (-average_shortest_path_length(state, 'weight'))
+        # return (-average_shortest_path_length(state, 'weight'))
     
 def analyze():
     data = DataFrame()
@@ -506,26 +506,27 @@ def analyze():
 def design(thread_id):
     architecture = performer.ARCHITECTURE
     benchmark = 'combined'
-    performer.reinitialize(thread_id, benchmark, 'latency', uniform(0, 4), 0)
-    # performer.update_estimators(4)
-    if architecture == 'mesh':
-        graph = performer.generate_grid_graph()
-    elif architecture == 'random':
-        graph = performer.generate_random_graph()
-    elif architecture == 'small_world':
-        graph = performer.generate_small_world_graph()
-    elif architecture == 'test':
-        raw_topology = loadtxt('topology_test.tsv', int)[-performer.NODE_COUNT:, -performer.NODE_COUNT:]
-        graph = from_numpy_matrix(raw_topology + 1)
-        performer.process_graph(graph)
-    elif architecture == 'optimum':
-        optimization = Optimization(initial_state = performer.generate_grid_graph())
-        final = hill_climbing(optimization)
-        graph = final.state
-    else:
-        raise NameError('unknown architecture: ' + architecture)
-    if graph != None:
-        performer.update_database(performer.DATASET_DESIGN, architecture, graph)
+    for i in range(100):
+        performer.reinitialize(thread_id, benchmark, 'latency', uniform(0, 8), 0)
+        performer.update_estimators(4)
+        if architecture == 'mesh':
+            graph = performer.generate_grid_graph()
+        elif architecture == 'random':
+            graph = performer.generate_random_graph()
+        elif architecture == 'small_world':
+            graph = performer.generate_small_world_graph()
+        elif architecture == 'test':
+            raw_topology = loadtxt('topology_test.tsv', int)[-performer.NODE_COUNT:, -performer.NODE_COUNT:]
+            graph = from_numpy_matrix(raw_topology + 1)
+            performer.process_graph(graph)
+        elif architecture == 'optimum':
+            optimization = Optimization(initial_state=performer.generate_small_world_graph())
+            final = hill_climbing(optimization)
+            graph = final.state
+        else:
+            raise NameError('unknown architecture: ' + architecture)
+        if graph != None:
+            performer.update_database(performer.DATASET_DESIGN, architecture, graph)
     return
 
 def test(benchmark):
@@ -533,19 +534,20 @@ def test(benchmark):
     results = data.ix[data['latency'].idxmin()]
     data.sort('average_path_length', inplace = True)
     graph = performer.string_to_graph(results['topology'])
-    performer.reinitialize(benchmark, benchmark, 'latency', uniform(0, 4), 0)
+    performer.reinitialize(benchmark, benchmark, 'latency', uniform(0, 8), 0)
     performer.update_database(performer.DATASET_TEST, performer.ARCHITECTURE, graph)
     return
 
 def view():
     data = read_csv('dataset_small_world_design.tsv', sep = '\t')
     print data.columns.values
-    data.sort('latency', inplace = True)
+    data.sort('average_path_length', inplace = True)
     print data[['architecture', 'benchmark', 'latency', 'average_path_length', 'alpha', 'beta']]
+    return
 
 if __name__ == '__main__':
-    objective = 'view'
-    performer.initialize(objective, 'random', 8, 112)
+    objective = 'design'
+    performer.initialize(objective, 'optimum', 8, 112)
     # performer.initialize_files(performer.DATASET_TEST)
     thread_count = 24
     pool = Pool(thread_count)
@@ -553,8 +555,9 @@ if __name__ == '__main__':
         # design(8)
         pool.map(design, range(thread_count))
     if objective == 'test':
-        # test('fft')
-        pool.map(test, performer.BENCHMARKS)
+        for benchmark in performer.BENCHMARKS:
+            test(benchmark)
+        # pool.map(test, performer.BENCHMARKS)
     if objective == 'analyze':
         analyze()
         check_call(['pdflatex', 'architect'])
