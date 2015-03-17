@@ -8681,7 +8681,7 @@ void setDefaults(){
 	bufferDepth=2;
 	numVirts=4;
 	queueSize=100;
-	DUR=100000;		// yuchen: the higher, the more accurate
+	DUR=1000000;		// yuchen: the higher, the more accurate
 	reset=2000;
 	step=1000;
 	traffic=0;

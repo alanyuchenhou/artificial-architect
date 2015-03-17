@@ -530,6 +530,7 @@ def design(thread_id):
     return
 
 def test(benchmark):
+    performer.initialize_files(performer.DATASET_TEST)
     data = read_csv(performer.DATASET_DESIGN, sep='\t')
     results = data.ix[data['latency'].idxmin()]
     data.sort('average_path_length', inplace = True)
@@ -546,9 +547,8 @@ def view():
     return
 
 if __name__ == '__main__':
-    objective = 'design'
+    objective = 'analyze'
     performer.initialize(objective, 'optimum', 8, 112)
-    # performer.initialize_files(performer.DATASET_TEST)
     thread_count = 24
     pool = Pool(thread_count)
     if objective == 'design':
