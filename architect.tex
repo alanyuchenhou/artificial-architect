@@ -27,7 +27,7 @@
 \maketitle
 
 %% \begin{abstract}
-%%   This project introduces machine learning enhanced on-chip network architecture design automation. It demonstrates a basic framework for the task. The framework is clarified with a concrete example of network topology optimization. A few experiments are conducted and summarize. The current experimental results have not yet provided evidences to prove this framework is indeed successful. The deficiency of this project and future work to address these issues are also discussed.
+%%   This project introduces machine learning enhanced on-chip network architecture design automation. It demonstrates a basic framework for the task. The framework is clarified with a concrete example of network topology optimization. A few experiments are conducted and summarize. The current experimental results have provided evidences that this framework is indeed successful. The deficiency of this project and future work to address these issues are also discussed.
 %% \end{abstract}
 
 %% \section{Finished steps}
@@ -83,7 +83,6 @@ Mesh networks have lower latencies than random networks. Optimized networks have
   \rule{\linewidth}{1pt} \caption{average path length} \label{fig:average_path_length_benchmark}
 \end{figure}
 
-The optimizations significantly reduced the average path lengths by more than 10 cycles, which corresponds to the reductions in latencies.
 \begin{figure}[htb]
   %% \begin{subfigure} {\includegraphics[width=.4\textwidth]{hop_count_average_normalized_benchmark}} \end{subfigure}
   \begin{subfigure} {\includegraphics[width= \textwidth]{average_hop_count_benchmark.png}} \end{subfigure}
@@ -92,7 +91,7 @@ The optimizations significantly reduced the average path lengths by more than 10
 
 The average hop counts for mesh is higher than the rest 3, which are very similar. The fact that random networks and small-world networks have similar average hop counts is consistent with the definition of small-world networks. But interestingly, the optimization does not, or can not reduce the average hop count. This similarity in average hop counts for random networks, small-world networks and optimized networks should be the results of the physical constraints on maximum degree. If this constraints can be relaxed in the future, optimization might come up with more 'scale-free' like networks with even shorter hop counts.
 
-In link lengths distributions, random networks have more evenly distributed mid-range links and less very short or very long links. Small-world networks use less long links and more short links. Optimized networks use many very short links and only a few long links. From network cost perspective, using more short links reduces cost.
+In link lengths distributions, random networks have more evenly distributed mid-range links and less very short or very long links. Small-world networks use less long links and more short links. Optimized networks use many very short links and only a few long links. From network cost perspective, using more short links reduces cost so the optimized network has lower cost.
 \clearpage
 \begin{figure}[htb]
   \begin{subfigure} {\includegraphics[width= \textwidth]{link_lengths_distribution.png}} \end{subfigure}
