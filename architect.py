@@ -471,11 +471,11 @@ class Optimization(SearchProblem):
     def result(self, state, action):
         return action
     def value(self, state):
-        raw_features = performer.extract_features(state)
-        estimated_metrics = performer.estimate_metrics(raw_features)
-        estimated_quality = performer.evaluate_quality(estimated_metrics)
-        return estimated_quality
-        # return (-performer.weighted_average_path_length(performer.TRAFFIC, state))
+        # raw_features = performer.extract_features(state)
+        # estimated_metrics = performer.estimate_metrics(raw_features)
+        # estimated_quality = performer.evaluate_quality(estimated_metrics)
+        # return estimated_quality
+        return (-performer.weighted_average_path_length(performer.TRAFFIC, state))
         # return (-average_shortest_path_length(state, 'weight'))
     
 def analyze():
@@ -504,11 +504,12 @@ def analyze():
     return
 
 def design(thread_id):
+    # performer.initialize_files(performer.DATASET_DESIGN)
     architecture = performer.ARCHITECTURE
-    benchmark = 'combined'
-    for i in range(100):
+    # benchmark = 'combined'
+    for benchmark in performer.BENCHMARKS:
         performer.reinitialize(thread_id, benchmark, 'latency', uniform(0, 8), 0)
-        performer.update_estimators(4)
+        # performer.update_estimators(4)
         if architecture == 'mesh':
             graph = performer.generate_grid_graph()
         elif architecture == 'random':
@@ -520,7 +521,8 @@ def design(thread_id):
             graph = from_numpy_matrix(raw_topology + 1)
             performer.process_graph(graph)
         elif architecture == 'optimum':
-            optimization = Optimization(initial_state=performer.generate_small_world_graph())
+            # optimization = Optimization(initial_state=performer.generate_small_world_graph())
+            optimization = Optimization(initial_state=performer.generate_grid_graph())
             final = hill_climbing(optimization)
             graph = final.state
         else:
@@ -528,6 +530,10 @@ def design(thread_id):
         if graph != None:
             performer.update_database(performer.DATASET_DESIGN, architecture, graph)
     return
+
+def infinite_design(thread_id):
+    while True:
+        design(thread_id)
 
 def test(benchmark):
     performer.initialize_files(performer.DATASET_TEST)
@@ -539,6 +545,12 @@ def test(benchmark):
     performer.update_database(performer.DATASET_TEST, performer.ARCHITECTURE, graph)
     return
 
+def combine():
+    data = read_csv(performer.DATASET_DESIGN, sep='\t')
+    data = data.ix[data.groupby(['architecture', 'benchmark'])['latency'].idxmin()]
+    data = data[['benchmark', 'latency']]
+    print data
+
 def view():
     data = read_csv('dataset_small_world_design.tsv', sep = '\t')
     print data.columns.values
@@ -547,19 +559,23 @@ def view():
     return
 
 if __name__ == '__main__':
-    objective = 'analyze'
+    objective = 'combine'
     performer.initialize(objective, 'optimum', 8, 112)
     thread_count = 24
     pool = Pool(thread_count)
     if objective == 'design':
         # design(8)
         pool.map(design, range(thread_count))
+    if objective == 'infinite_design':
+        pool.map(infinite_design, range(thread_count))
     if objective == 'test':
-        for benchmark in performer.BENCHMARKS:
-            test(benchmark)
-        # pool.map(test, performer.BENCHMARKS)
+        # for benchmark in performer.BENCHMARKS:
+        #     test(benchmark)
+        pool.map(test, performer.BENCHMARKS)
     if objective == 'analyze':
         analyze()
         check_call(['pdflatex', 'architect'])
     if objective == 'view':
         view()
+    if objective == 'combine':
+        combine()
