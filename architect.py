@@ -1,5 +1,8 @@
 #!/usr/bin/env python
-# simulator: power components missing
+
+# Redistribution and use in any form is permitted
+# by its original author Yuchen Hou. Enjoy!
+
 from collections import OrderedDict
 from multiprocessing import Pool
 from shutil import copyfile
@@ -471,11 +474,11 @@ class Optimization(SearchProblem):
     def result(self, state, action):
         return action
     def value(self, state):
-        # raw_features = performer.extract_features(state)
-        # estimated_metrics = performer.estimate_metrics(raw_features)
-        # estimated_quality = performer.evaluate_quality(estimated_metrics)
-        # return estimated_quality
-        return (-performer.weighted_average_path_length(performer.TRAFFIC, state))
+        raw_features = performer.extract_features(state)
+        estimated_metrics = performer.estimate_metrics(raw_features)
+        estimated_quality = performer.evaluate_quality(estimated_metrics)
+        return estimated_quality
+        # return (-performer.weighted_average_path_length(performer.TRAFFIC, state))
         # return (-average_shortest_path_length(state, 'weight'))
     
 def analyze():
@@ -521,8 +524,8 @@ def design(thread_id):
             graph = from_numpy_matrix(raw_topology + 1)
             performer.process_graph(graph)
         elif architecture == 'optimum':
-            # optimization = Optimization(initial_state=performer.generate_small_world_graph())
-            optimization = Optimization(initial_state=performer.generate_grid_graph())
+            optimization = Optimization(initial_state=performer.generate_small_world_graph())
+            # optimization = Optimization(initial_state=performer.generate_grid_graph())
             final = hill_climbing(optimization)
             graph = final.state
         else:
