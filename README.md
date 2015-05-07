@@ -1,3 +1,0 @@
-architect
-=========
-This is a artificial intelligence enhanced electronic design automation project. Specifically, it exploits 2 artificial techniques - local search and machine learning - to automate on-chip network design. The framework is clarified with a concrete example of network topology optimization. The current experimental results have provided evidences that the framework is indeed successful.
