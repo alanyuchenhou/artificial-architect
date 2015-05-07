@@ -4,7 +4,7 @@ architect
 .. contents::
 
 What is Architect?
----
+------------------
 Architect is a Python program for autonomous on-chip network optimization for a 64-core processor. It uses artificial intelligence techniques including local search and machine learning.
 
 Motivation:
