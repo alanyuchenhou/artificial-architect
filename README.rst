@@ -47,6 +47,7 @@ The following packages are required
 
 
 To install required packages, use the following command::
+
  sudo pip install matplotlib simpleai scikit-learn networkx numpy scipy pandas
 
 Code
