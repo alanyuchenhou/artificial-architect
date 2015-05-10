@@ -54,7 +54,7 @@ Usage
 Edit file ``architect.py`` to specify what you want the architect to do.
 Then activate the architect::
 
- .architect.py
+ ./architect.py
 
 Authors
 ----
