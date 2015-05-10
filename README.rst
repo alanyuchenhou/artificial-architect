@@ -35,6 +35,17 @@ The following packages are required
 - scipy: http://www.scipy.org/
 - pandas: http://pandas.pydata.org/
 
+
+
+
+
+
+
+
+
+
+
+
 To install required packages, use the following command::
  sudo pip install matplotlib simpleai scikit-learn networkx numpy scipy pandas
 
