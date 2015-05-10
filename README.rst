@@ -56,12 +56,10 @@ Then activate the architect::
 
  ./architect.py
 
-Authors
-----
-
-Yuchen hou <yuchen.hou@wsu.edu>
-
-Domain Background
+Background
 ----
 
 On-chip network is an advanced communication system in modern chip designs. High design quality of on-chip network is always achieved through good trade-offs between many conflicting design features. However, design feature trade-off and design quality analysis become more difficult with the exponential growth of design complexity. Therefore, performing a large number simulations has become the primary method for many design optimization tasks. Also, simulation based design processes are time consuming because simulations are getting more expensive.
+
+Authors
+----
