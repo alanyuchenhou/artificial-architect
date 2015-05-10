@@ -10,6 +10,7 @@ Artificial-architect is a Python program for autonomous on-chip network design o
 
 Features
 ----
+
 Here are a few things artificial-architect can do well:
 
 - Network features extraction: extract features including shortest path lengths, clustering coefficient, degree distribution, etc
@@ -24,6 +25,7 @@ Here are a few things artificial-architect can do well:
 
 Dependencies
 ----
+
 The following packages are required
 
 - Python 2.7
@@ -35,36 +37,28 @@ The following packages are required
 - scipy: http://www.scipy.org/
 - pandas: http://pandas.pydata.org/
 
-
-
-
-
-
-
-
-
-
-
-
 To install required packages, use the following command::
 
  sudo pip install matplotlib simpleai scikit-learn networkx numpy scipy pandas
 
 Code
 ----
+
 To get a copy of the source code, clone the git repository using the the following command::
 
  git clone https://github.com/yuchenhou/artificial-architect.git
 
 Usage
 ----
+
 Edit file ``architect.py`` to specify what you want the architect to do.
-Activate the architect::
+Then activate the architect::
 
  .architect.py
 
 Authors
 ----
+
 Yuchen hou <yuchen.hou@wsu.edu>
 
 Domain Background
