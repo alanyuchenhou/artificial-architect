@@ -10,7 +10,6 @@ Artificial-architect is a Python program for autonomous on-chip network design o
 
 Features
 ----
-
 Here are a few things artificial-architect can do well:
 
 - Network features extraction: extract features including shortest path lengths, clustering coefficient, degree distribution, etc
@@ -26,6 +25,7 @@ Here are a few things artificial-architect can do well:
 Dependencies
 ----
 The following packages are required
+
 - Python 2.7
 - matplotlib: http://matplotlib.org/
 - simpleai: https://simpleai.readthedocs.org/
@@ -47,7 +47,6 @@ To get a copy of the source code, clone the git repository using the the followi
 Usage
 ----
 Edit file ``architect.py`` to specify what you want the architect to do.
-
 Activate the architect::
 
  .architect.py
@@ -56,7 +55,7 @@ Authors
 ----
 Yuchen hou <yuchen.hou@wsu.edu>
 
-Background
+Domain Background
 ----
 
 On-chip network is an advanced communication system in modern chip designs. High design quality of on-chip network is always achieved through good trade-offs between many conflicting design features. However, design feature trade-off and design quality analysis become more difficult with the exponential growth of design complexity. Therefore, performing a large number simulations has become the primary method for many design optimization tasks. Also, simulation based design processes are time consuming because simulations are getting more expensive.
